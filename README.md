@@ -1,5 +1,8 @@
 # boss-writing
 
+[![tests](https://github.com/wcy8822/boss-writing/actions/workflows/tests.yml/badge.svg)](https://github.com/wcy8822/boss-writing/actions/workflows/tests.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 **让 AI 写出的中文汇报材料，能直接在会上讲出口——并且越用越准。**
 
 一份可直接装进 Claude Code 的写作规范（Agent Skill），管的是「句子怎么写」：季度规划、区域汇报、项目复盘、周报、立项、PPT 母稿、演讲稿、管理层简报。
@@ -126,6 +129,7 @@ references/
   DESIGN.md                     学习内核的需求、边界与验收标准
   sources.example.yaml          采集来源配置模板
 tests/                          20 个单测
+.github/workflows/tests.yml     CI：3.9 / 3.11 / 3.12 三个版本跑测试
 visual/
   VISUAL-STANDARD.md            HTML 汇报材料八条视觉规格
   template-warm.html            暖色版模板
@@ -157,6 +161,13 @@ python3 tools/business_language.py learn \
 
 - 文中所有示例、数字、业务场景、词包内容均为虚构，仅用于演示。
 - 两个 HTML 模板的正文是示例材料，使用时整段替换。
+
+## 参与贡献
+
+最有价值的 PR 往往是几行 YAML——一条真实的改稿案例，比抽象规则有用得多。
+详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+⛔ **提交前请确认改动里没有你公司的真实姓名、内部系统名、未公开业务数据或聊天记录。**
 
 ## 许可证
 
