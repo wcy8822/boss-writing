@@ -9,6 +9,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -217,14 +218,160 @@ def write_report(path: Path, findings: list[Finding], routed: list[dict[str, Any
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+REUSABLE_FEEDBACK_RESULTS = {"owner_feedback", "owner_selected", "accepted_final"}
+FEEDBACK_CONTEXT_WILDCARDS = {"", "all", "any", "*"}
+
+
+def feedback_terms(text: str) -> set[str]:
+    """Return explainable Latin words and short CJK n-grams for scene matching."""
+    terms = set(re.findall(r"[a-z0-9][a-z0-9_-]+", text.lower()))
+    for chunk in re.findall(r"[一-鿿]+", text):
+        if len(chunk) <= 4:
+            terms.add(chunk)
+            continue
+        for size in (2, 3, 4):
+            terms.update(chunk[index:index + size] for index in range(len(chunk) - size + 1))
+    return terms
+
+
+def feedback_context_matches(event_value: str, requested: str) -> bool:
+    event_normalized = str(event_value or "").strip().lower()
+    requested_normalized = str(requested or "").strip().lower()
+    if requested_normalized in FEEDBACK_CONTEXT_WILDCARDS:
+        return True
+    return event_normalized == requested_normalized
+
+
+def is_owner_feedback(event: dict[str, Any]) -> bool:
+    source = event.get("source")
+    return isinstance(source, dict) and source.get("kind") == "owner"
+
+
+def check_feedback_application(
+    text: str, applicable: Iterable[dict[str, Any]]
+) -> dict[str, Any]:
+    """Verify that exact replacement feedback did not regress in a finished draft."""
+    violations: list[dict[str, Any]] = []
+    checked = 0
+    for event in applicable:
+        before = str(event.get("before", "")).strip()
+        after = str(event.get("after", "")).strip()
+        if not before or not after:
+            continue
+        checked += 1
+        after_present = after in text
+        residual_text = text.replace(after, "") if after_present else text
+        before_present = before in residual_text
+        if before_present:
+            violations.append({
+                "before": before,
+                "after": after,
+                "reason": event.get("reason", ""),
+                "before_present": before_present,
+                "after_present": after_present,
+            })
+    return {"passed": not violations, "checked": checked, "violations": violations}
+
+
+def query_feedback(
+    query: str,
+    events: Iterable[dict[str, Any]],
+    audience: str,
+    material_type: str,
+    limit: int = 5,
+) -> dict[str, Any]:
+    """Find owner-confirmed feedback that is reusable in the requested scene."""
+    query_terms = feedback_terms(query)
+    ranked: list[tuple[int, int, dict[str, Any]]] = []
+    for index, raw_event in enumerate(events):
+        event = dict(raw_event)
+        if event.get("result") not in REUSABLE_FEEDBACK_RESULTS:
+            continue
+        if not is_owner_feedback(event):
+            continue
+        if event.get("reuse_scope", "once") == "once":
+            continue
+        reuse_scope = event.get("reuse_scope")
+        if reuse_scope == "similar":
+            if str(event.get("audience", "")).strip().lower() != audience.strip().lower():
+                continue
+            if str(event.get("material_type", "")).strip().lower() != material_type.strip().lower():
+                continue
+        else:
+            if not feedback_context_matches(event.get("audience", ""), audience):
+                continue
+            if not feedback_context_matches(event.get("material_type", ""), material_type):
+                continue
+        evidence = " ".join(str(event.get(field, "")) for field in
+                            ("topic", "before", "after", "reason"))
+        overlap = sorted(query_terms & feedback_terms(evidence))
+        if reuse_scope == "similar" and not overlap:
+            continue
+
+        score = len(overlap)
+        score += 3 if str(event.get("audience", "")).lower() == audience.lower() else 0
+        score += 3 if str(event.get("material_type", "")).lower() == material_type.lower() else 0
+        score += 2 if reuse_scope == "stable" else 0
+        event["match"] = {
+            "audience": event.get("audience", ""),
+            "material_type": event.get("material_type", ""),
+            "terms": overlap,
+            "score": score,
+        }
+        ranked.append((score, index, event))
+
+    conflict_keys: set[str] = set()
+    grouped: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    for _, index, event in ranked:
+        key = re.sub(r"\s+", "", str(event.get("before", ""))).lower()
+        if key:
+            grouped.setdefault(key, []).append((index, event))
+
+    conflicts: list[dict[str, Any]] = []
+    for key, members in grouped.items():
+        alternatives = {
+            str(event.get("after", "")).strip()
+            for _, event in members
+            if str(event.get("after", "")).strip()
+        }
+        if len(alternatives) < 2:
+            continue
+        conflict_keys.add(key)
+        ordered = [event for _, event in sorted(members, key=lambda item: item[0])]
+        conflicts.append({
+            "before": ordered[0].get("before", ""),
+            "alternatives": list(dict.fromkeys(event.get("after", "") for event in ordered)),
+            "events": ordered,
+            "requires_owner_choice": True,
+        })
+
+    ranked.sort(key=lambda item: (-item[0], -item[1]))
+    applicable = [
+        event for _, _, event in ranked
+        if re.sub(r"\s+", "", str(event.get("before", ""))).lower() not in conflict_keys
+    ]
+    return {
+        "query": query,
+        "audience": audience,
+        "material_type": material_type,
+        "applicable": applicable[:limit],
+        "conflicts": conflicts,
+    }
+
+
 def feedback_event(args: argparse.Namespace) -> dict[str, Any]:
     return {
+        "schema_version": 2,
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "before": args.before,
         "after": args.after,
         "reason": args.reason,
         "audience": args.audience,
         "material_type": args.material_type,
+        "topic": getattr(args, "topic", ""),
+        "reuse_scope": getattr(args, "reuse_scope", "once"),
         "result": args.result,
+        "source": {"kind": getattr(args, "source_kind", "owner")},
         "status": "candidate",
     }
 
@@ -233,6 +380,22 @@ def append_jsonl(path: Path, item: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+
+def load_feedback(path: Path = RUNTIME_DIR / "feedback.jsonl") -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    events: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            events.append(item)
+    return events
 
 
 def extract_candidates(records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -434,6 +597,33 @@ def command_learn(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_feedback_query(args: argparse.Namespace) -> int:
+    payload = query_feedback(
+        args.query,
+        load_feedback(Path(args.feedback_file)),
+        audience=args.audience,
+        material_type=args.material_type,
+        limit=args.limit,
+    )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
+def command_feedback_check(args: argparse.Namespace) -> int:
+    text = Path(args.file).read_text(encoding="utf-8")
+    selected = query_feedback(
+        args.query,
+        load_feedback(Path(args.feedback_file)),
+        audience=args.audience,
+        material_type=args.material_type,
+        limit=args.limit,
+    )
+    result = check_feedback_application(text, selected["applicable"])
+    payload = {**result, "conflicts": selected["conflicts"]}
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if payload["passed"] and not payload["conflicts"] else 1
+
+
 def command_ingest(args: argparse.Namespace) -> int:
     records = [json.loads(line) for line in Path(args.input).read_text(encoding="utf-8").splitlines() if line.strip()]
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
@@ -508,9 +698,29 @@ def parser() -> argparse.ArgumentParser:
     learn.add_argument("--reason", required=True)
     learn.add_argument("--audience", required=True)
     learn.add_argument("--material-type", required=True)
+    learn.add_argument("--topic", default="")
+    learn.add_argument("--reuse-scope", choices=["once", "similar", "stable"], default="similar")
     learn.add_argument("--result", default="owner_feedback")
+    learn.add_argument("--source-kind", choices=["owner", "model", "chat", "document"], default="owner")
     learn.add_argument("--output", default=str(RUNTIME_DIR / "feedback.jsonl"))
     learn.set_defaults(func=command_learn)
+
+    feedback = sub.add_parser("feedback-query")
+    feedback.add_argument("query")
+    feedback.add_argument("--audience", required=True)
+    feedback.add_argument("--material-type", required=True)
+    feedback.add_argument("--feedback-file", default=str(RUNTIME_DIR / "feedback.jsonl"))
+    feedback.add_argument("--limit", type=int, default=5)
+    feedback.set_defaults(func=command_feedback_query)
+
+    feedback_check = sub.add_parser("feedback-check")
+    feedback_check.add_argument("file")
+    feedback_check.add_argument("query")
+    feedback_check.add_argument("--audience", required=True)
+    feedback_check.add_argument("--material-type", required=True)
+    feedback_check.add_argument("--feedback-file", default=str(RUNTIME_DIR / "feedback.jsonl"))
+    feedback_check.add_argument("--limit", type=int, default=5)
+    feedback_check.set_defaults(func=command_feedback_check)
 
     ingest = sub.add_parser("ingest")
     ingest.add_argument("--input", required=True, help="DC或外部采集器输出的JSONL")

@@ -1,8 +1,10 @@
 import importlib.util
+import io
 import json
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 
@@ -64,11 +66,17 @@ class BusinessLanguageTest(unittest.TestCase):
             "reason": "听感有压力",
             "audience": "region",
             "material_type": "speech",
+            "topic": "区域季度汇报",
+            "reuse_scope": "similar",
             "result": "owner_feedback",
         })()
         event = MODULE.feedback_event(args)
         self.assertEqual(event["status"], "candidate")
         self.assertEqual(event["after"], "一起把这件事做成")
+        self.assertEqual(event["schema_version"], 2)
+        self.assertEqual(event["topic"], "区域季度汇报")
+        self.assertEqual(event["reuse_scope"], "similar")
+        self.assertRegex(event["created_at"], r"^\d{4}-\d{2}-\d{2}T")
 
     def test_external_namespace_cannot_promote_to_business_pack(self):
         payload = MODULE.ingest_payload([{"content": "用真实动作组织文章"}], "external")
@@ -201,6 +209,277 @@ class TechniqueTest(unittest.TestCase):
         hits = MODULE.query_techniques("标题", self.items)
         self.assertIn("tech-title-as-claim", [i["id"] for i in hits])
         self.assertEqual(MODULE.query_techniques("量子航天育种", self.items), [])
+
+
+class FeedbackReuseTest(unittest.TestCase):
+    def test_query_reuses_only_matching_scene_feedback(self):
+        events = [
+            {
+                "before": "区域愿不愿用",
+                "after": "工具是否适合真实业务使用",
+                "reason": "不要把产品验证写成对区域的考核",
+                "audience": "region",
+                "material_type": "speech",
+                "topic": "区域季度汇报",
+                "reuse_scope": "similar",
+                "result": "owner_feedback",
+                "source": {"kind": "owner"},
+                "status": "candidate",
+            },
+            {
+                "before": "区域执行情况",
+                "after": "区域反馈情况",
+                "reason": "仅本次调整",
+                "audience": "region",
+                "material_type": "speech",
+                "topic": "区域季度汇报",
+                "reuse_scope": "once",
+                "result": "owner_feedback",
+                "source": {"kind": "owner"},
+                "status": "candidate",
+            },
+            {
+                "before": "愿不愿用",
+                "after": "是否采用",
+                "reason": "管理层材料保持直接",
+                "audience": "management",
+                "material_type": "speech",
+                "topic": "管理层汇报",
+                "reuse_scope": "similar",
+                "result": "owner_feedback",
+                "source": {"kind": "owner"},
+                "status": "candidate",
+            },
+        ]
+
+        result = MODULE.query_feedback(
+            "准备区域季度复盘，说明工具试用情况",
+            events,
+            audience="region",
+            material_type="speech",
+        )
+
+        self.assertEqual(len(result["applicable"]), 1)
+        self.assertEqual(result["applicable"][0]["after"], "工具是否适合真实业务使用")
+        self.assertEqual(result["conflicts"], [])
+
+    def test_conflicting_feedback_is_preserved_but_not_auto_applied(self):
+        events = [
+            {
+                "before": "直接说结论",
+                "after": "先讲结果，再补过程",
+                "reason": "管理层先看结果",
+                "audience": "management",
+                "material_type": "weekly",
+                "topic": "项目周报",
+                "reuse_scope": "similar",
+                "result": "owner_feedback",
+                "source": {"kind": "owner"},
+            },
+            {
+                "before": "直接说结论",
+                "after": "先交代背景，再给结论",
+                "reason": "跨团队需要完整上下文",
+                "audience": "management",
+                "material_type": "weekly",
+                "topic": "项目周报",
+                "reuse_scope": "similar",
+                "result": "owner_feedback",
+                "source": {"kind": "owner"},
+            },
+        ]
+
+        result = MODULE.query_feedback(
+            "项目周报需要说明背景和结果",
+            events,
+            audience="management",
+            material_type="weekly",
+        )
+
+        self.assertEqual(result["applicable"], [])
+        self.assertEqual(len(result["conflicts"]), 1)
+        self.assertEqual(result["conflicts"][0]["before"], "直接说结论")
+        self.assertEqual(
+            result["conflicts"][0]["alternatives"],
+            ["先讲结果，再补过程", "先交代背景，再给结论"],
+        )
+        self.assertTrue(result["conflicts"][0]["requires_owner_choice"])
+
+    def test_feedback_query_cli_reads_the_learn_store(self):
+        event = {
+            "before": "只讲产品能力",
+            "after": "讲清任务前后怎么变化",
+            "reason": "听众需要知道自己少做了什么",
+            "audience": "region",
+            "material_type": "speech",
+            "topic": "区域工具介绍",
+            "reuse_scope": "similar",
+            "result": "owner_feedback",
+            "source": {"kind": "owner"},
+            "status": "candidate",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            feedback_file = Path(directory) / "feedback.jsonl"
+            feedback_file.write_text(json.dumps(event, ensure_ascii=False) + "\n", encoding="utf-8")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = MODULE.main([
+                    "feedback-query",
+                    "区域工具介绍怎么讲",
+                    "--audience", "region",
+                    "--material-type", "speech",
+                    "--feedback-file", str(feedback_file),
+                ])
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["applicable"][0]["after"], "讲清任务前后怎么变化")
+
+    def test_learn_then_query_closes_the_next_draft_loop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            feedback_file = Path(directory) / "feedback.jsonl"
+            with redirect_stdout(io.StringIO()):
+                learn_exit = MODULE.main([
+                    "learn",
+                    "--before", "区域愿不愿用",
+                    "--after", "工具是否适合真实业务使用",
+                    "--reason", "产品验证不能写成对区域的考核",
+                    "--audience", "region",
+                    "--material-type", "speech",
+                    "--topic", "区域季度汇报",
+                    "--reuse-scope", "similar",
+                    "--output", str(feedback_file),
+                ])
+            output = io.StringIO()
+            with redirect_stdout(output):
+                query_exit = MODULE.main([
+                    "feedback-query",
+                    "区域季度汇报里的产品试用",
+                    "--audience", "region",
+                    "--material-type", "speech",
+                    "--feedback-file", str(feedback_file),
+                ])
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual((learn_exit, query_exit), (0, 0))
+        self.assertEqual(payload["applicable"][0]["before"], "区域愿不愿用")
+        self.assertTrue(payload["applicable"][0]["match"]["terms"])
+
+    def test_explicit_all_query_can_retrieve_concrete_scenes(self):
+        event = {
+            "before": "只讲能力",
+            "after": "讲清任务前后变化",
+            "reason": "让价值可感知",
+            "audience": "region",
+            "material_type": "speech",
+            "topic": "工具介绍",
+            "reuse_scope": "stable",
+            "result": "owner_feedback",
+            "source": {"kind": "owner"},
+        }
+
+        result = MODULE.query_feedback(
+            "跨场景盘点写作偏好", [event], audience="all", material_type="all"
+        )
+
+        self.assertEqual([item["after"] for item in result["applicable"]],
+                         ["讲清任务前后变化"])
+
+    def test_explicit_all_does_not_expand_similar_feedback(self):
+        event = {
+            "before": "只讲能力",
+            "after": "讲清任务前后变化",
+            "reason": "让价值可感知",
+            "audience": "region",
+            "material_type": "speech",
+            "topic": "工具介绍",
+            "reuse_scope": "similar",
+            "result": "owner_feedback",
+            "source": {"kind": "owner"},
+        }
+
+        result = MODULE.query_feedback(
+            "跨场景盘点工具介绍", [event], audience="all", material_type="all"
+        )
+
+        self.assertEqual(result["applicable"], [])
+
+    def test_non_owner_feedback_is_never_reused(self):
+        event = {
+            "before": "只讲能力",
+            "after": "堆几个更热闹的口号",
+            "reason": "模型建议",
+            "audience": "region",
+            "material_type": "speech",
+            "topic": "工具介绍",
+            "reuse_scope": "stable",
+            "result": "accepted_final",
+            "source": {"kind": "model"},
+        }
+
+        result = MODULE.query_feedback(
+            "工具介绍", [event], audience="region", material_type="speech"
+        )
+
+        self.assertEqual(result["applicable"], [])
+
+    def test_next_draft_check_proves_feedback_was_applied(self):
+        feedback = [{
+            "before": "区域愿不愿用",
+            "after": "工具是否适合真实业务使用",
+        }]
+
+        failed = MODULE.check_feedback_application(
+            "接下来验证区域愿不愿用。", feedback
+        )
+        passed = MODULE.check_feedback_application(
+            "接下来验证工具是否适合真实业务使用。", feedback
+        )
+
+        self.assertFalse(failed["passed"])
+        self.assertEqual(failed["violations"][0]["before"], "区域愿不愿用")
+        self.assertTrue(passed["passed"])
+        self.assertEqual(passed["violations"], [])
+
+        unrelated = MODULE.check_feedback_application("本篇只讨论数据口径。", feedback)
+        self.assertTrue(unrelated["passed"])
+        self.assertEqual(unrelated["violations"], [])
+
+        overlapping = MODULE.check_feedback_application(
+            "现在要讲清能力与任务变化。",
+            [{"before": "讲能力", "after": "讲清能力与任务变化"}],
+        )
+        self.assertTrue(overlapping["passed"])
+
+    def test_feedback_check_cli_returns_nonzero_on_regression(self):
+        event = {
+            "before": "区域愿不愿用",
+            "after": "工具是否适合真实业务使用",
+            "reason": "避免归责",
+            "audience": "region",
+            "material_type": "speech",
+            "topic": "区域季度汇报",
+            "reuse_scope": "similar",
+            "result": "owner_feedback",
+            "source": {"kind": "owner"},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            draft = root / "draft.md"
+            store = root / "feedback.jsonl"
+            draft.write_text("继续观察区域愿不愿用。", encoding="utf-8")
+            store.write_text(json.dumps(event, ensure_ascii=False) + "\n", encoding="utf-8")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = MODULE.main([
+                    "feedback-check", str(draft), "区域季度汇报",
+                    "--audience", "region", "--material-type", "speech",
+                    "--feedback-file", str(store),
+                ])
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 1)
+        self.assertFalse(payload["passed"])
 
 
 if __name__ == "__main__":

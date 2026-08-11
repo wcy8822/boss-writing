@@ -2,6 +2,7 @@
 
 [![tests](https://github.com/wcy8822/boss-writing/actions/workflows/tests.yml/badge.svg)](https://github.com/wcy8822/boss-writing/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![version](https://img.shields.io/badge/version-2.0.0-orange.svg)](VERSION)
 
 **让 AI 写出的中文汇报材料，能直接在会上讲出口——并且越用越准。**
 
@@ -40,7 +41,7 @@
 采集 → 识别业务表达 → 保留来源 → 辅助写作 → 分级检查 → 收集反馈 → 更新词包、案例与作者偏好
 ```
 
-八个命令：`route`（自动选词包）、`lint`（影子检查）、`knowledge-query`（检索已确认知识）、`learn`（记录反馈事件）、`ingest`（语料抽候选）、`sanitize`（一致性脱敏）、`blind-packet`（多模型匿名评测）、`technique-query`（检索写作技巧）。
+十个命令：`route`（自动选词包）、`lint`（影子检查）、`knowledge-query`（检索已确认知识）、`learn`（记录反馈事件）、`feedback-query`（按场景复用反馈）、`feedback-check`（验收下一稿是否落实反馈）、`ingest`（语料抽候选）、`sanitize`（一致性脱敏）、`blind-packet`（多模型匿名评测）、`technique-query`（检索写作技巧）。
 
 四份随用随长的资产：通用语言包、业务词包、作者偏好档案、正反案例库。
 
@@ -63,7 +64,7 @@
 
 ## 当前进展与边界
 
-在季度规划、区域汇报、周报三类材料上跑过多轮，材料评分从 60 提到 85。27 个单测覆盖路由、检查、脱敏、反馈、技巧抽取与隐私闸门。
+在季度规划、区域汇报、周报三类材料上跑过多轮，材料评分从 60 提到 85。36 个单测覆盖路由、检查、脱敏、反馈记录与复用、场景隔离、应用回归、冲突保留、技巧抽取与隐私闸门。
 
 **明确说清楚三条边界，别误解它的能力：**
 
@@ -89,13 +90,17 @@ git clone <本仓库> ~/.claude/skills/boss-writing
 
 ```bash
 pip install pyyaml
-python3 -m pytest tests/ -q      # 27 passed
+python3 -m pytest tests/ -q      # 36 passed
 ```
 
-## 首次使用先做五件事
+## 首次使用
+
+安装后可以直接拿真实材料开始，不需要先填作者卡或完成建档。Skill 会先完成当前写作任务；只有真实发生的修改反馈，才会作为带场景边界的事件留在本地。
+
+以下配置均为按需增强，不是首次使用的前置步骤：
 
 1. **建你自己的业务词包**——复制 `language-packs/example-domain.yaml`。**特别是把名字里带禁词的产品名登记进去**（`type: product` + `approved`），否则模型会擅自给你的产品改名。
-2. **建作者档案**——复制 `profiles/example.yaml`，让它随反馈长大。
+2. **维护作者档案**——需要长期整理稳定偏好时，再复制 `profiles/example.yaml`；普通反馈由 `.runtime/feedback.jsonl` 自动积累。
 3. **补术语表**——`tools/style-lint.py` 的 `TERMS`，按你团队的技术栈增删。表里没有的内部黑话（自研系统名、平台名、项目代号）才是最该加的。
 4. **调禁词表**——`tools/rewrite-check.py` 的 `BAN_JARGON` 与 `WHITELIST`。
 5. **换品牌色**——两个 HTML 模板 CSS 顶部的 `--orange-*` 一组是占位色。
@@ -117,7 +122,7 @@ SKILL.md                        写什么、怎么写（主文档）
 tools/
   style-lint.py                 句长 / 并列过载 / 术语命中 / 归责表达
   rewrite-check.py              改写稿验收：数字增删 / 禁词 / 篇幅 / SMART 覆盖
-  business_language.py          学习内核（八个子命令）
+  business_language.py          学习内核（十个子命令）
   check_local_privacy.py        pre-commit 隐私闸门
   smart-polish-prompt.md        交给模型润色时的 prompt 模板
 language-packs/
@@ -129,7 +134,7 @@ techniques/example.yaml         写作技巧库（外部资料学来的写法）
 references/
   DESIGN.md                     学习内核的需求、边界与验收标准
   sources.example.yaml          采集来源配置模板
-tests/                          27 个单测
+tests/                          36 个单测
 .github/workflows/tests.yml     CI：3.9 / 3.11 / 3.12 三个独立 job
 SECURITY.md                     安全边界与静态扫描告警逐条说明
 visual/
@@ -154,8 +159,28 @@ python3 tools/business_language.py lint draft.md --report report.json
 # 记录一次反馈 —— 这一步不做，学习闭环就是断的
 python3 tools/business_language.py learn \
   --before "共同承诺" --after "一起把这件事做成" \
-  --reason "对合作团队有压力" --audience region --material-type speech
+  --reason "对合作团队有压力" --audience region --material-type speech \
+  --topic "区域季度汇报" --reuse-scope similar
+
+# 下一篇写作前，按受众、材料类型和主题检索可复用反馈
+python3 tools/business_language.py feedback-query "区域季度汇报 工具试用" \
+  --audience region --material-type speech
+
+# 成稿后验证命中的反馈是否真正落实；发现旧表达复发时返回非零
+python3 tools/business_language.py feedback-check draft.md "区域季度汇报 工具试用" \
+  --audience region --material-type speech
 ```
+
+### v2.0：这次为什么改，下次还能继续用
+
+`learn` 不再只把反馈写进文件就结束。每条事件同时保存听众、材料类型、主题、来源和复用范围；下一篇写作前，`feedback-query` 只返回当前场景适用、且明确来自 owner 的反馈；成稿后由 `feedback-check` 检查旧表达是否复发。若本稿根本没有涉及这条反馈，不会为了通过检查而强塞替代表达：
+
+- `once` 只留档，不复用；
+- `similar` 只在相同听众、材料类型和相似主题中复用；
+- `stable` 用于用户明确确认的长期原则；
+- 同一场景出现相反改法时进入 `conflicts`，保留双方，不自动选边。
+
+反馈库仍位于 `.runtime/`，默认不进入版本库；公开仓库只包含机制、示例和测试。
 
 **机检只证明格式与事实纪律，不证明听感。** 量化词、越界解读、全局矛盾三项必须人工过一遍，判据见 `SKILL.md` §八。
 

@@ -1,11 +1,13 @@
 ---
 name: boss-writing
 description: 老板级和跨团队中文材料写作与改写规范。用于季度规划、区域汇报、项目复盘、周报、立项、PPT 母稿、演讲稿和管理层简报。用户说“写汇报、写材料、改写、精简、说人话、去 AI 味、给老板看、给区域讲、语气有攻击性”时使用。核心是保留成熟原文、先业务后工具、结论先行、客观不归责、专业且能讲出口，并通过业务词包、作者档案与反馈事件持续学习写作偏好。
+metadata:
+  version: 2.0.0
 ---
 
 # 老板级材料写作（boss-writing）
 
-> **公开版 v1.0**。萃取自多轮真实管理层材料的评审反馈，已去除具体业务内容，文中示例均为虚构。
+> **公开版 v2.0**。萃取自多轮真实管理层材料的评审反馈，已去除具体业务内容，文中示例均为虚构。
 > 定位：**管文风**（句子怎么写），不管取数与发布流程。
 > 一句话诊断：多数“太啰嗦”的材料是**术语病，不是结构病**——先治句子里的词，别推倒骨架。
 
@@ -474,7 +476,7 @@ candidate → supported → pending_confirmation → approved
 只有 owner 确认、已采纳稿或正式命名能直接写 `approved`。
 **聊天里说得最多的词，往往正是最没被推敲过的词**——所以高频只提高证据等级，永远不自动转正。
 
-### 七个命令
+### 十个命令
 
 ```bash
 # 自动选词包（看它命中了哪些触发词）
@@ -489,10 +491,19 @@ python3 tools/business_language.py knowledge-query "主题词"
 # 检索写作技巧（这个场景该用什么手法）
 python3 tools/business_language.py technique-query "标题怎么写"
 
-# 记录一次反馈事件 —— 这一步不做，前面全白干
+# 写作前检索相似场景中已经确认过的反馈
+python3 tools/business_language.py feedback-query "区域季度汇报 工具试用" \
+  --audience region --material-type speech
+
+# 成稿后验证本次命中的反馈是否落实
+python3 tools/business_language.py feedback-check draft.md "区域季度汇报 工具试用" \
+  --audience region --material-type speech
+
+# 记录一次反馈事件；默认只在相似场景复用
 python3 tools/business_language.py learn \
   --before "共同承诺" --after "一起把这件事做成" \
-  --reason "对合作团队有压力" --audience region --material-type speech
+  --reason "对合作团队有压力" --audience region --material-type speech \
+  --topic "区域季度汇报" --reuse-scope similar
 
 # 把采集到的 JSONL 抽成候选表达（kind=external 时物理隔离，禁止转正）
 python3 tools/business_language.py ingest --input corpus.jsonl --output candidates.yaml --kind dc
@@ -503,6 +514,24 @@ python3 tools/business_language.py sanitize draft.md --entity "某某团队" --n
 # 生成匿名评测包：三个角色拿同一组问题，评完再揭晓谁是谁
 python3 tools/business_language.py blind-packet draft.md --entity "某某团队" --output packet.json
 ```
+
+### v2.0 写作闭环（必须执行）
+
+每次写作或改写前，在 `route`、`knowledge-query` 之后运行 `feedback-query`。查询必须带当前听众、材料类型和主题；不能只按某个词全局套用历史反馈。
+
+- `applicable`：当前场景可复用的 owner 反馈。把其中的 `before / after / reason` 当作写作约束，并保留 `match` 作为应用依据。
+- `conflicts`：同一表达在当前场景出现两种改法。两条都保留，**不自动选边**；只有这种会实质改变结果的冲突才询问用户。
+- 没有命中：明确按当前材料写，不凭空补一条“用户偏好”。
+
+成稿后必须运行 `feedback-check`。检查只在旧表达实际复发时失败；本稿未涉及这条历史反馈时，不会强迫塞入替代表达。出现回归或尚未解决的冲突时返回非零。这样闭环是“记录 → 检索 → 应用 → 验收”，不是只把反馈存进文件。
+
+用户确认、否定或定稿后运行 `learn`：
+
+- `--reuse-scope once`：只记录这一次，不进入下次写作；
+- `--reuse-scope similar`：默认值，只在相同听众、材料类型和相似主题中复用；
+- `--reuse-scope stable`：只有用户明确表达“以后都这样”“统一这么写”等长期原则时使用。
+
+所有反馈仍写入 `.runtime/feedback.jsonl`，保持 `candidate`，不因重复出现自动进入业务词包。事件同时保存 `source.kind`；只有 `owner` 可复用，模型、聊天摘录和文档建议即使结果字段相同也不会进入应用列表。v2.0 复用的是带场景边界的 owner 反馈事件，不是把候选词静默转正。
 
 ### 两个必须理解的设计
 
@@ -553,14 +582,14 @@ python3 tools/check_local_privacy.py || exit 1
 | `techniques/example.yaml` | 写作技巧库：每条必须有 before/after 对照与 avoid_when |
 | `references/DESIGN.md` | 学习内核的完整需求、边界与验收标准 |
 | `references/sources.example.yaml` | 采集来源配置模板 |
-| `tests/` | 27 个单测，覆盖路由、检查、脱敏、反馈、技巧抽取与隐私闸门 |
+| `tests/` | 36 个单测，覆盖路由、检查、脱敏、反馈复用、场景隔离、应用回归、冲突保留、技巧抽取与隐私闸门 |
 | `visual/VISUAL-STANDARD.md` | HTML 汇报材料的八条视觉规格 |
 | `visual/template-warm.html` | 暖色版模板（季度规划默认） |
 | `visual/template-fresh.html` | 清新版模板（项目型汇报） |
 
-**首次使用先做五件事**：
+**首次使用可以直接写材料，不要求先填作者卡。以下均为按需增强**：
 ① 复制 `language-packs/example-domain.yaml` 改成你自己的业务词包，**特别是把名字里带禁词的产品名登记进去**；
-② 复制 `profiles/example.yaml` 改成你自己的作者档案；
+② 需要整理长期稳定偏好时，再复制 `profiles/example.yaml` 维护作者档案；普通反馈由 `.runtime/feedback.jsonl` 自动积累；
 ③ 按所在团队的技术栈增补 `style-lint.py` 的术语表；
 ④ 按组织用词习惯调整 `rewrite-check.py` 的禁词表与白名单；
 ⑤ 把两个 HTML 模板的品牌色换成自己的。
