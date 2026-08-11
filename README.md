@@ -117,7 +117,7 @@ SKILL.md                        写什么、怎么写（主文档）
 tools/
   style-lint.py                 句长 / 并列过载 / 术语命中 / 归责表达
   rewrite-check.py              改写稿验收：数字增删 / 禁词 / 篇幅 / SMART 覆盖
-  business_language.py          学习内核（七个子命令）
+  business_language.py          学习内核（八个子命令）
   check_local_privacy.py        pre-commit 隐私闸门
   smart-polish-prompt.md        交给模型润色时的 prompt 模板
 language-packs/
@@ -125,12 +125,13 @@ language-packs/
   example-domain.yaml           业务词包模板
 profiles/example.yaml           作者偏好档案模板
 cases/example.yaml              正反案例库模板
-techniques/example.yaml      写作技巧库（外部资料学来的写法）
+techniques/example.yaml         写作技巧库（外部资料学来的写法）
 references/
   DESIGN.md                     学习内核的需求、边界与验收标准
   sources.example.yaml          采集来源配置模板
 tests/                          27 个单测
-.github/workflows/tests.yml     CI：3.9 / 3.11 / 3.12 三个版本跑测试
+.github/workflows/tests.yml     CI：3.9 / 3.11 / 3.12 三个独立 job
+SECURITY.md                     安全边界与静态扫描告警逐条说明
 visual/
   VISUAL-STANDARD.md            HTML 汇报材料八条视觉规格
   template-warm.html            暖色版模板
@@ -169,6 +170,11 @@ python3 tools/business_language.py learn \
 详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ⛔ **提交前请确认改动里没有你公司的真实姓名、内部系统名、未公开业务数据或聊天记录。**
+
+## 安全
+
+不联网、不执行外部代码、不外发任何内容。静态扫描常见告警（`subprocess` / `re.compile` /
+Actions 表达式）的逐条说明与自查命令见 [SECURITY.md](SECURITY.md)。
 
 ## 许可证
 

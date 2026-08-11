@@ -1,39 +1,77 @@
 name: tests
 
+# 说明：本文件刻意不使用 matrix 与 GitHub Actions 表达式插值。
+# 三个 Python 版本写成三个独立 job，版本号是字面量。
+# 原因：静态扫描工具通常按正则匹配表达式语法判定 script injection，不区分它出现在
+# run:（真注入点）还是 name:/with:（不经 shell）。这里用重复换取零表达式，
+# CI 行为完全一致。
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.11", "3.12"]
+permissions:
+  contents: read
 
+jobs:
+  test-py39:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-
+          python-version: "3.9"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyyaml pytest
-
       - name: Run tests
         run: python -m pytest tests/ -q
-
-      - name: 校验脚本可执行（零依赖那两个）
+      - name: 校验脚本可执行
         run: |
           python tools/style-lint.py README.md || true
           python tools/business_language.py route README.md
+      - name: 隐私闸门自检 —— 仓库里不该出现聊天语料
+        run: python tools/check_local_privacy.py
 
+  test-py311:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml pytest
+      - name: Run tests
+        run: python -m pytest tests/ -q
+      - name: 校验脚本可执行
+        run: |
+          python tools/style-lint.py README.md || true
+          python tools/business_language.py route README.md
+      - name: 隐私闸门自检 —— 仓库里不该出现聊天语料
+        run: python tools/check_local_privacy.py
+
+  test-py312:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml pytest
+      - name: Run tests
+        run: python -m pytest tests/ -q
+      - name: 校验脚本可执行
+        run: |
+          python tools/style-lint.py README.md || true
+          python tools/business_language.py route README.md
       - name: 隐私闸门自检 —— 仓库里不该出现聊天语料
         run: python tools/check_local_privacy.py
