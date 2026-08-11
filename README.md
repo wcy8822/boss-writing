@@ -130,7 +130,7 @@ visual/
   VISUAL-STANDARD.md            HTML 汇报材料八条视觉规格
   template-warm.html            暖色版模板
   template-fresh.html           清新版模板
-  原始标准-v6.2.md              视觉标准的原始出处
+  ORIGINAL-STANDARD-v6.2.md     视觉标准的原始出处
 ```
 
 ## 常用命令
@@ -160,6 +160,6 @@ python3 tools/business_language.py learn \
 
 ## 许可证
 
-[Apache License 2.0](LICENSE)。
+[Apache License 2.0](LICENSE) · Copyright 2026 wcy8822
 
-使用前请把 `LICENSE` 末尾 APPENDIX 与 `NOTICE` 中的 `[yyyy]`、`[name of copyright owner]` 替换成实际年份与版权人。若本项目属于职务成果，版权人通常是所属公司——请按贵司开源合规流程确认后再对外发布。
+若本项目被认定为职务成果，版权归属可能属于所属单位。对外公开发布前请按所在单位的开源合规流程确认，必要时更新 `LICENSE` 与 `NOTICE` 中的版权人。

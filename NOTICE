@@ -1,5 +1,5 @@
 boss-writing
-Copyright [yyyy] [name of copyright owner]
+Copyright 2026 wcy8822
 
 This product includes software developed by the boss-writing contributors.
 
@@ -10,5 +10,5 @@ You may obtain a copy of the License at
     http://www.apache.org/licenses/LICENSE-2.0
 
 ---
-使用前请把上面的 [yyyy] 和 [name of copyright owner] 替换成实际年份与版权人。
-若本项目属于职务成果，版权人通常是所属公司，请按贵司开源合规流程确认后填写。
+若本项目被认定为职务成果，版权归属可能属于所属单位。
+对外公开发布前请按所在单位的开源合规流程确认，必要时更新上方版权人。
