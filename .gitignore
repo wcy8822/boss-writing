@@ -1,0 +1,7 @@
+# 本地私密区：聊天语料、脱敏映射、运行缓存 —— 永不提交
+.runtime/
+references/sources.local.yaml
+
+__pycache__/
+*.pyc
+.pytest_cache/

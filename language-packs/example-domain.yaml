@@ -1,0 +1,99 @@
+# 业务词包示例 —— 复制这个文件，改成你自己的业务域。
+#
+# 关键字段：
+#   triggers   材料里出现任一词就加载本包（自动路由的依据）
+#   type       product 产品正式名 / deliverable 交付物 / action 动作 / business_stage 阶段
+#   status     candidate → supported → pending_confirmation → approved
+#              ⚠️ 只有 owner 确认、定稿材料或正式命名可以直接写 approved
+#   sources    每条都要有来源，kind: owner / document / material
+#
+# type: product 的词会在检查时被"保护"——即使名字里含禁词（如"赋能"）也不报错。
+id: example-domain
+name: 示例业务域
+triggers: [选址推荐, 客户洞察报告, 客户赋能工具, 策略编号, 点位, 两区试点, 圈选]
+terms:
+  - id: ex-site-recommendation
+    text: 选址推荐
+    type: product
+    status: approved
+    audiences: [management, region, internal]
+    positions: [title, claim, summary, body]
+    meaning: 按标签圈选点位 在地图上判断并保存名单
+    variants: []
+    sources: [{kind: owner, ref: 示例 —— 定稿确认}]
+  - id: ex-customer-insight
+    text: 客户洞察报告
+    type: product
+    status: approved
+    audiences: [management, region, internal]
+    positions: [title, claim, summary, body]
+    meaning: 快速说明客户周边竞争 客群分流和经营机会
+    variants: [洞察报告]
+    sources: [{kind: owner, ref: 示例 —— 定稿确认}]
+  # ⭐ 这条专门演示「专有名词优先于禁词表」：
+  #    名字里含通用禁词「赋能」，但因为 type: product 且 approved，检查时不会被报。
+  #    把你自己名字里带禁词的产品名照这样登记，模型就不会擅自把它改名。
+  - id: ex-enablement-tool
+    text: 客户赋能工具
+    type: product
+    status: approved
+    audiences: [management, region, internal]
+    positions: [title, claim, summary, body]
+    meaning: 面向客户经营的一组分析与沟通材料
+    variants: [赋能工具]
+    sources: [{kind: owner, ref: 示例 —— 正式命名}]
+  - id: ex-strategy-id
+    text: 策略编号
+    type: deliverable
+    status: approved
+    audiences: [management, region, internal]
+    positions: [claim, summary, body]
+    meaning: 保存名单后用于继续跟踪和回溯的编号
+    variants: []
+    sources: [{kind: owner, ref: 示例 —— 定稿确认}]
+  - id: ex-list
+    text: 名单
+    type: deliverable
+    status: approved
+    audiences: [management, region, internal]
+    positions: [title, claim, summary, body]
+    meaning: 使用方可以核对 使用和反馈的一组对象
+    sources: [{kind: owner, ref: 示例 —— 试点表述确认}]
+  - id: ex-map
+    text: 地图
+    type: deliverable
+    status: approved
+    audiences: [management, region, internal]
+    positions: [title, claim, summary, body]
+    meaning: 集中查看位置和周边竞争关系的呈现方式
+    sources: [{kind: owner, ref: 示例 —— 定稿确认}]
+  - id: ex-select
+    text: 圈选
+    type: action
+    status: approved
+    audiences: [region, internal]
+    positions: [claim, summary, body]
+    meaning: 按标签批量选出候选对象
+    sources: [{kind: owner, ref: 示例 —— 定稿确认}]
+  - id: ex-two-region-pilot
+    text: 两区试点
+    type: business_stage
+    status: approved
+    audiences: [management, region, internal]
+    positions: [title, claim, summary, body]
+    meaning: 在两个区域验证名单 流程和方法
+    variants: [两区试]
+    sources: [{kind: owner, ref: 示例 —— 计划确认}]
+phrases:
+  - text: 按标签批量圈选
+    type: action
+    status: approved
+    sources: [{kind: owner, ref: 示例 —— 口播稿}]
+  - text: 在地图上集中判断
+    type: action
+    status: approved
+    sources: [{kind: owner, ref: 示例 —— 口播稿}]
+  - text: 名单保存后继续跟踪和回溯
+    type: result
+    status: approved
+    sources: [{kind: owner, ref: 示例 —— 口播稿}]

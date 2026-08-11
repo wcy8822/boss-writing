@@ -1,0 +1,79 @@
+# 通用写作语言包 —— 跨业务稳定成立的表达规则。
+# 这一份不要塞进你的业务词；业务词请另建 <你的域>.yaml（可参考 example-domain.yaml）。
+id: common
+name: 通用写作语言
+triggers: []          # common 包永远加载，不需要触发词
+terms:
+  - id: common-copy
+    text: 复制
+    type: claim_keyword
+    status: approved
+    audiences: [management, region, internal]
+    positions: [title, claim, summary, body]
+    meaning: 把已经验证的能力 方法 工具或试点经验带到更多场景
+    sources:
+      - kind: owner
+        ref: 示例 —— 定稿材料确认
+  - id: common-together
+    text: 一起把这件事做成
+    type: tone
+    status: approved
+    audiences: [region, internal]
+    positions: [summary, body]
+    meaning: 面向合作团队的并肩行动表达
+    sources:
+      - kind: owner
+        ref: 示例 —— 结尾表达确认
+discouraged:
+  - text: 共同承诺
+    level: high
+    positions: [title, claim, summary]
+    reason: 对合作团队带来约束和考核感
+    suggestions: [一起把这件事做成]
+  - text: 让好经验不再只留在个人手里
+    level: high
+    positions: [title, claim, summary, body]
+    reason: 把机制问题归因于个人意愿
+    suggestions: [让经验可以复制]
+  - text: 增长复制引擎
+    level: high
+    positions: [title, claim, summary, body]
+    reason: 无来源的抽象业务概念
+    suggestions: [复制能力, 复制方法, 复制试点经验]
+  - text: 策略复制载体
+    level: high
+    positions: [title, claim, summary, body]
+    reason: 无来源的抽象业务概念
+    suggestions: [策略编号, 名单]
+  - text: 抓手
+    level: medium
+    positions: [title, claim, summary, body]
+    reason: 抽象且缺少具体交付物
+    suggestions: [名单, 地图, 规则, 工具]
+  - text: 护城河
+    level: medium
+    positions: [title, claim, summary, body]
+    reason: 通用价值词 缺少业务对象和动作
+    suggestions: []
+  - text: 底座
+    level: medium
+    positions: [title, claim, summary, body]
+    reason: 抽象技术比喻 没有说明具体交付物或业务变化
+    suggestions: [数据, 系统, 工具]
+  - text: 赋能
+    level: medium
+    positions: [title, claim, summary, body]
+    reason: 单独使用时含义抽象 正式产品名除外
+    suggestions: []
+technical_terms:
+  - {text: ClickHouse, replacement: 数据库}
+  - {text: mapper, replacement: ''}
+  - {text: mock, replacement: 模拟数据}
+  - {text: 灰度, replacement: 先对白名单内的同学开放试用}
+  - {text: 合入主干, replacement: 进入正式代码库}
+  - {text: 回绿, replacement: 恢复正常}
+  - {text: SSO, replacement: 登录与权限控制}
+tone_patterns:
+  - {text: 愿不愿用, reason: 把产品验证写成对使用方的考核}
+  - {text: 要求各, reason: 容易形成居高临下的听感}
+  - {text: 必须让, reason: 容易形成命令感}

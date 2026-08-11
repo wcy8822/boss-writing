@@ -1,0 +1,33 @@
+# 作者偏好档案示例 —— 复制成 <你的标识>.yaml，随反馈逐条长出来。
+#
+# 规则：一次反馈只影响相似场景；同一偏好被接受 repeated_acceptance_threshold 次
+# 才升级为稳定偏好；不同听众下冲突的偏好并存，不互相覆盖。
+# 下面五条是示例，删掉换成你自己的。
+id: example-author
+version: 1.0.0
+stable_preferences:
+  - id: positive-direction
+    principle: 多讲我们要怎么做 少用负向铺垫
+    contexts: [all]
+    sources: [{kind: owner, ref: 示例 —— 口播反馈}]
+  - id: clear-rhythm
+    principle: 使用节奏清晰 不使用节奏简单
+    contexts: [speech]
+    sources: [{kind: owner, ref: 示例 —— 口播反馈}]
+  - id: warm-peer
+    principle: 面向一线温暖并肩 不使用考核和施压表达
+    contexts: [region_presentation]
+    sources: [{kind: owner, ref: 示例 —— 汇报反馈}]
+  - id: task-before-after
+    principle: 介绍工具时讲真实任务前后怎么变化
+    contexts: [management, region_presentation, speech]
+    sources: [{kind: owner, ref: 示例 —— 工具介绍反馈}]
+  - id: restrained-uplift
+    principle: 鼓舞来自目标和行动 不用套话连续上价值
+    contexts: [management, region_presentation, speech]
+    sources: [{kind: owner, ref: 示例 —— 口播反馈}]
+learning_policy:
+  explicit_owner_feedback_weight: high     # 明确纠正权重最高
+  repeated_acceptance_threshold: 2         # 同一偏好被接受几次才转正
+  preserve_conflicts_by_context: true      # 冲突偏好按场景并存，不覆盖
+  detect_repeated_catchphrases: true       # 同一金句反复出现时提示回到业务场景

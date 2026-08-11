@@ -1,0 +1,36 @@
+# 正反案例库示例 —— 每次改稿被采纳或否定，就往这里加一条。
+# 案例比词表更有用：它保留了「为什么这么改」和「对谁说」。
+id: example-cases
+cases:
+  - id: tone-001
+    kind: negative
+    before: 让好经验不再只留在个人手里
+    after: 让经验可以复制
+    reason: 原句把机制问题归因于个人意愿
+    audience: region
+    material_type: presentation
+    result: owner_rejected_before
+  - id: tone-002
+    kind: negative
+    before: 共同承诺
+    after: 一起把这件事做成
+    reason: 原句对合作团队有压力
+    audience: region
+    material_type: presentation
+    result: owner_approved_after
+  - id: tool-001
+    kind: positive
+    before: 选址推荐服务区域和一线团队 提高选点和拓展效率
+    after: 以前需要逐个搜索 反复核对 再把结果拼进多个表格 现在按标签批量圈选 在地图上集中判断 名单保存后还能继续跟踪和回溯
+    reason: 讲清任务前后变化和效率具体提升在哪里
+    audience: region
+    material_type: presentation
+    result: owner_approved_after
+  - id: tool-002
+    kind: positive
+    before: 客户洞察报告为客户拜访提供数据支持
+    after: 以前拜访客户时很难回答周边有哪些竞争对手 现在可以快速说明竞争对手 客群分流和经营机会
+    reason: 从产品介绍转为真实拜访任务
+    audience: region
+    material_type: presentation
+    result: owner_approved_after

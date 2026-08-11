@@ -1,0 +1,4 @@
+interface:
+  display_name: "Boss Writing"
+  short_description: "用可追溯业务语言写出有现场感的汇报材料"
+  default_prompt: "使用 boss-writing，在保留事实和成熟表达的前提下改写材料，并运行业务语言影子检查。"

@@ -1,0 +1,23 @@
+# 采集来源配置（示例）。
+# ⚠️ 真实的群名、联系人和扫描游标请写进同目录 sources.local.yaml —— 它已被 .gitignore 排除。
+chat:
+  mode: trusted_sources_and_topics
+  local_config: sources.local.yaml
+  trusted_chats: []       # 在 sources.local.yaml 里填
+  trusted_people: []      # 在 sources.local.yaml 里填
+  topics: [示例主题一, 示例主题二]
+  output_schema: [content, source, timestamp, speaker]
+  unavailable_policy: use_cache_and_report_stale
+  storage:
+    raw_sanitized: .runtime/chat-scan.jsonl
+    candidates: .runtime/candidates.yaml
+    knowledge_manifest: .runtime/knowledge/source-manifest.yaml
+    approved_knowledge: .runtime/knowledge-base/
+external:
+  # 外部公开资料只补写法，物理隔离，永不进业务词包
+  isolation: writing_methods_only
+  allow_categories:
+    - 企业股东信和管理层演讲
+    - 高质量深度商业报道
+    - 专业写作和演讲方法
+  promotion_to_business_pack: forbidden
