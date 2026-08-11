@@ -486,6 +486,9 @@ python3 tools/business_language.py lint draft.md --report report.json
 # 检索已确认的知识卡（写之前先查，别凭印象补词）
 python3 tools/business_language.py knowledge-query "主题词"
 
+# 检索写作技巧（这个场景该用什么手法）
+python3 tools/business_language.py technique-query "标题怎么写"
+
 # 记录一次反馈事件 —— 这一步不做，前面全白干
 python3 tools/business_language.py learn \
   --before "共同承诺" --after "一起把这件事做成" \
@@ -526,9 +529,10 @@ python3 tools/check_local_privacy.py || exit 1
 ### 当前边界（别误解它的能力）
 
 - **不联网**。设计上就不联网（详见 `references/DESIGN.md` §5）。`ingest` 的输入是你准备好的 JSONL。
-- **外部写作资料通道是半成品**。`--kind external` 只做到了命名空间隔离 + 禁止转正，
-  抽取逻辑与内部采集共用同一套业务名词正则，**抽不出"这段为什么写得好"**。
-  要真正做到，得先定义「一条写作技巧」的结构化字段，再谈抽取——这是设计问题，不是工程问题。
+- **外部资料学的是写法，不是业务词**。`--kind external` 走独立的技巧定位器
+  （`techniques/`），认对照结构（不是A而是B / 以前…现在 / 数字带解读 / 破误解）。
+  ⚠️ **它只定位候选段落，不生成技巧**——`problem` / `technique` / `avoid_when`
+  三个字段是判断，正则产不出，留空待人或模型补全。外部来源永远 `candidate` + `promotion: forbidden`。
 - **知识检索是关键词匹配**，不是语义检索。没命中会明确返回未命中，不会编。
 
 完整设计与验收标准见 [`references/DESIGN.md`](references/DESIGN.md)。
@@ -546,9 +550,10 @@ python3 tools/check_local_privacy.py || exit 1
 | `language-packs/*.yaml` | 通用写作语言包 + 业务词包模板 |
 | `profiles/example.yaml` | 作者偏好档案模板 |
 | `cases/example.yaml` | 正反案例库模板 |
+| `techniques/example.yaml` | 写作技巧库：每条必须有 before/after 对照与 avoid_when |
 | `references/DESIGN.md` | 学习内核的完整需求、边界与验收标准 |
 | `references/sources.example.yaml` | 采集来源配置模板 |
-| `tests/` | 20 个单测，覆盖路由、检查、脱敏、反馈与隐私闸门 |
+| `tests/` | 27 个单测，覆盖路由、检查、脱敏、反馈、技巧抽取与隐私闸门 |
 | `visual/VISUAL-STANDARD.md` | HTML 汇报材料的八条视觉规格 |
 | `visual/template-warm.html` | 暖色版模板（季度规划默认） |
 | `visual/template-fresh.html` | 清新版模板（项目型汇报） |

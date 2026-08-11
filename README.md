@@ -40,7 +40,7 @@
 采集 → 识别业务表达 → 保留来源 → 辅助写作 → 分级检查 → 收集反馈 → 更新词包、案例与作者偏好
 ```
 
-七个命令：`route`（自动选词包）、`lint`（影子检查）、`knowledge-query`（检索已确认知识）、`learn`（记录反馈事件）、`ingest`（语料抽候选）、`sanitize`（一致性脱敏）、`blind-packet`（多模型匿名评测）。
+八个命令：`route`（自动选词包）、`lint`（影子检查）、`knowledge-query`（检索已确认知识）、`learn`（记录反馈事件）、`ingest`（语料抽候选）、`sanitize`（一致性脱敏）、`blind-packet`（多模型匿名评测）、`technique-query`（检索写作技巧）。
 
 四份随用随长的资产：通用语言包、业务词包、作者偏好档案、正反案例库。
 
@@ -63,12 +63,12 @@
 
 ## 当前进展与边界
 
-在季度规划、区域汇报、周报三类材料上跑过多轮，材料评分从 60 提到 85。20 个单测覆盖路由、检查、脱敏、反馈与隐私闸门。
+在季度规划、区域汇报、周报三类材料上跑过多轮，材料评分从 60 提到 85。27 个单测覆盖路由、检查、脱敏、反馈、技巧抽取与隐私闸门。
 
 **明确说清楚三条边界，别误解它的能力：**
 
 1. **不联网**。全包零联网代码，设计上就不联网。`ingest` 的输入是你准备好的 JSONL，采集器由调用端提供。
-2. **外部写作资料通道是半成品**。`--kind external` 只做到了命名空间隔离和「禁止转正」标记；抽取逻辑与内部采集共用同一套业务名词正则，**抽不出「这段为什么写得好」**。要真正做到，得先定义「一条写作技巧」的结构化字段。
+2. **外部资料只学写法，且只做到「定位候选」**。`--kind external` 走独立的技巧定位器，认四类对照结构；但 `problem` / `technique` / `avoid_when` 这三个真正有价值的字段是判断，正则产不出，**留空待人或模型补全**。这是刻意的——早期版本让正则去生成技巧，抽出来全是「XX能力」这类看着像结果、实则没信息的短语。
 3. **知识检索是关键词匹配**，不是语义检索。没命中会明确返回未命中，不会编。
 
 视觉模板中的「顶部阅读进度条」一条尚未实现（`VISUAL-STANDARD.md` 已注明）。
@@ -89,7 +89,7 @@ git clone <本仓库> ~/.claude/skills/boss-writing
 
 ```bash
 pip install pyyaml
-python3 -m pytest tests/ -q      # 20 passed
+python3 -m pytest tests/ -q      # 27 passed
 ```
 
 ## 首次使用先做五件事
@@ -125,10 +125,11 @@ language-packs/
   example-domain.yaml           业务词包模板
 profiles/example.yaml           作者偏好档案模板
 cases/example.yaml              正反案例库模板
+techniques/example.yaml      写作技巧库（外部资料学来的写法）
 references/
   DESIGN.md                     学习内核的需求、边界与验收标准
   sources.example.yaml          采集来源配置模板
-tests/                          20 个单测
+tests/                          27 个单测
 .github/workflows/tests.yml     CI：3.9 / 3.11 / 3.12 三个版本跑测试
 visual/
   VISUAL-STANDARD.md            HTML 汇报材料八条视觉规格

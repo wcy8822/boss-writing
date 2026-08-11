@@ -1,0 +1,65 @@
+# 写作技巧库 —— 从公开资料学「写法」，与业务词包物理隔离。
+#
+# 与业务词包的根本区别：
+#   业务词包回答「这个词能不能用」——它约束事实。
+#   技巧库回答「这段为什么写得好，什么时候能照着写」——它只提供手法。
+#   所以外部来源的技巧**永远 status: candidate + promotion: forbidden**，
+#   不管它被引用多少次，都进不了业务词包。
+#
+# 每条必须有 example_before / example_after 的对照。
+# 没有对照的「技巧」是抽象口号，抽出来也没法用。
+# avoid_when 同样必填 —— 任何手法用错场合都会变成毛病。
+id: example-techniques
+techniques:
+  - id: tech-title-as-claim
+    title: 标题即观点
+    category: structure
+    problem: 读者扫标题时得不到任何判断，只看到栏目名，必须读完正文才知道这章讲什么
+    technique: 把标题写成一个能单独摘出来、独立成立的判断句
+    example_before: 第三章 · 解决方案
+    example_after: 从资源覆盖转向有效经营空间
+    use_when: [汇报材料, 演讲稿, 长文档, 提案]
+    avoid_when: [法律文书, 需要中立表述的清单, 目录页]
+    source: {kind: internal, ref: 本项目实践}
+    status: approved
+    promotion: forbidden
+
+  - id: tech-not-a-but-b
+    title: 不是A而是B
+    category: sentence
+    problem: 直接给结论时，读者心里的默认理解没有被处理，会一边读一边反驳
+    technique: 先说出读者默认的误解并否定它，再给更准的判断。全篇用两三处，放在最值得强调的地方
+    example_before: 我们需要提高选点质量
+    example_after: 问题不是缺点位，而是缺值得去的点位
+    use_when: [核心主张, 章节开头, 需要扭转认知的段落]
+    avoid_when: [连续使用超过三次, 读者本来就没有误解的地方]
+    source: {kind: internal, ref: 本项目实践}
+    status: approved
+    promotion: forbidden
+
+  - id: tech-number-with-reading
+    title: 数字带解读
+    category: number
+    problem: 孤立的数字不产生判断，读者不知道该高兴还是该着急
+    technique: 每个关键数字后面跟一句「这说明什么」，且解读只能从材料本身推出
+    example_before: 覆盖率 12%
+    example_after: 覆盖率 12%，还有 8000 多个空白点位——所以问题不是没地方可去
+    use_when: [所有含数字的结论, 数据卡片, 进展汇报]
+    avoid_when: [附录数据表, 解读需要引入材料里没有的外部对照物时]
+    source: {kind: internal, ref: 本项目实践}
+    status: approved
+    promotion: forbidden
+
+  # ↓ 这条演示外部来源的形态：可以引用，但永远是 candidate
+  - id: tech-honest-layering
+    title: 诚实分层
+    category: tone
+    problem: 满格口号让读者怀疑全部内容，一处夸大会污染整份材料的可信度
+    technique: 区分「有」和「能不能真正用」，主动说出当前边界
+    example_before: 能力已全面建成，可支撑各类场景
+    example_after: 名单圈选已具备生产条件，任务下发接口联调后才能全线运转
+    use_when: [进展汇报, 阶段验收, 对上汇报]
+    avoid_when: [已经完全确定的事实, 需要果断表态的决策场合]
+    source: {kind: external, ref: 公开的企业管理层沟通材料, url: ''}
+    status: candidate
+    promotion: forbidden

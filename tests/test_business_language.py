@@ -145,5 +145,63 @@ class BusinessLanguageTest(unittest.TestCase):
         self.assertIn("增长复制引擎", texts)
 
 
+class TechniqueTest(unittest.TestCase):
+    """FR-9：外部资料学写法，不学业务词。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.items = MODULE.load_techniques(SKILL_ROOT / "techniques")
+
+    def test_external_ingest_uses_technique_extractor_not_business_regex(self):
+        records = [{"content": "以前需要逐个搜索反复核对，现在按标签批量圈选。", "source": "book-a"}]
+        payload = MODULE.ingest_payload(records, "external")
+        self.assertEqual(payload["namespace"], "external-writing-methods")
+        self.assertEqual(payload["promotion_to_business_pack"], "forbidden")
+        self.assertEqual(payload["items"][0]["pattern_hit"], "before_after")
+        # 业务名词正则会抽出「拜访工具」这类词；技巧通道不该产出这种东西
+        self.assertNotIn("text", payload["items"][0])
+
+    def test_technique_skeleton_leaves_judgement_fields_empty(self):
+        """正则产不出判断——problem/technique/avoid_when 必须留空待补。"""
+        records = [{"content": "问题不是缺点位，而是缺值得去的点位。", "source": "talk-b"}]
+        item = MODULE.extract_technique_candidates(records)[0]
+        self.assertEqual(item["pattern_hit"], "contrast")
+        for field in ("title", "problem", "technique", "avoid_when"):
+            self.assertEqual(item[field], MODULE.TECHNIQUE_SKELETON_TODO)
+
+    def test_external_candidate_can_never_be_approved(self):
+        records = [{"content": "覆盖率 12%，这说明还有大量空白。", "source": "report-c"}]
+        item = MODULE.extract_technique_candidates(records)[0]
+        self.assertEqual(item["pattern_hit"], "number_reading")
+        self.assertEqual(item["status"], "candidate")
+        self.assertEqual(item["promotion"], "forbidden")
+
+    def test_all_four_patterns_are_recognised(self):
+        records = [{"content": "不是缺站而是缺好站。以前靠人现在靠规则。"
+                               "覆盖率 12%，这说明还有空间。看起来很近，实际要绕路。",
+                    "source": "mix"}]
+        hits = {i["pattern_hit"] for i in MODULE.extract_technique_candidates(records)}
+        self.assertEqual(hits, {"contrast", "before_after", "number_reading", "myth_break"})
+
+    def test_every_shipped_technique_has_before_after_and_avoid(self):
+        """没有对照的技巧是抽象口号，不许进库。"""
+        self.assertTrue(self.items)
+        for item in self.items:
+            for field in ("problem", "technique", "example_before", "example_after",
+                          "use_when", "avoid_when"):
+                self.assertTrue(item.get(field), f"{item['id']} 缺 {field}")
+
+    def test_external_sourced_technique_stays_candidate(self):
+        for item in self.items:
+            if item.get("source", {}).get("kind") == "external":
+                self.assertEqual(item["status"], "candidate", item["id"])
+            self.assertEqual(item.get("promotion"), "forbidden", item["id"])
+
+    def test_technique_query_matches_by_scenario(self):
+        hits = MODULE.query_techniques("标题", self.items)
+        self.assertIn("tech-title-as-claim", [i["id"] for i in hits])
+        self.assertEqual(MODULE.query_techniques("量子航天育种", self.items), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,7 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 PACK_DIR = SKILL_ROOT / "language-packs"
 RUNTIME_DIR = SKILL_ROOT / ".runtime"
 KNOWLEDGE_DIR = RUNTIME_DIR / "knowledge-base"
+TECHNIQUE_DIR = SKILL_ROOT / "techniques"
 
 
 @dataclass
@@ -256,13 +257,95 @@ def extract_candidates(records: Iterable[dict[str, Any]]) -> list[dict[str, Any]
     return sorted(counts.values(), key=lambda item: (-item["count"], item["text"]))
 
 
+# 写作技巧的候选定位器。
+#
+# ⚠️ 关键设计：**这里不生成技巧，只定位「值得人看一眼」的段落。**
+# 一条技巧的核心是 problem / technique / avoid_when 三个字段，它们是判断，
+# 正则产不出判断。早期版本让外部资料走业务名词正则，抽出来的全是
+# 「XX方法」「XX能力」这类短语 —— 看着像结果，其实没有任何可复用信息。
+# 所以这里只做机械可靠的事：认出带对照结构的句子，输出待补全的骨架。
+TECHNIQUE_PATTERNS = (
+    ("contrast",       re.compile(r"不是.{1,30}?[，,]?\s*而是|与其.{1,30}?[，,]?\s*不如")),
+    ("before_after",   re.compile(r"(?:以前|过去|原来|此前).{2,60}?(?:现在|如今|改成|now)")),
+    ("number_reading", re.compile(r"\d+(?:\.\d+)?%?.{0,12}?(?:这说明|意味着|所以|因此|说明)")),
+    ("myth_break",     re.compile(r"(?:看起来|通常认为|直觉上|表面上).{2,60}?(?:实际|其实|但)")),
+)
+
+TECHNIQUE_SKELETON_TODO = "TODO 由人或模型补全"
+
+
+def extract_technique_candidates(records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """定位带对照结构的段落，产出待补全的技巧骨架（不产出技巧本身）。"""
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        content = str(record.get("content", ""))
+        for sentence in re.split(r"[。！？\n]", content):
+            sentence = sentence.strip()
+            if len(sentence) < 8:
+                continue
+            for name, pattern in TECHNIQUE_PATTERNS:
+                if not pattern.search(sentence):
+                    continue
+                key = f"{name}:{sentence}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({
+                    "id": f"cand-{len(out) + 1:03d}",
+                    "pattern_hit": name,
+                    "excerpt": sentence,
+                    "source": {
+                        "kind": "external",
+                        "ref": record.get("source", "unknown"),
+                        "timestamp": record.get("timestamp"),
+                    },
+                    # 以下四项是一条技巧的真正内容，正则给不出，留空待补
+                    "title": TECHNIQUE_SKELETON_TODO,
+                    "problem": TECHNIQUE_SKELETON_TODO,
+                    "technique": TECHNIQUE_SKELETON_TODO,
+                    "avoid_when": TECHNIQUE_SKELETON_TODO,
+                    "status": "candidate",
+                    "promotion": "forbidden",
+                })
+                break
+    return out
+
+
+def load_techniques(technique_dir: Path = TECHNIQUE_DIR) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for path in sorted(technique_dir.glob("*.yaml")):
+        for item in load_yaml(path).get("techniques", []):
+            entry = dict(item)
+            entry["technique_file"] = path.name
+            items.append(entry)
+    return items
+
+
+def query_techniques(query: str, items: Iterable[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
+    """按场景检索技巧。候选态一并返回，但保留 status 供调用方判断。"""
+    terms = [t for t in re.findall(r"[一-鿿]{2,}|[A-Za-z]{2,}", query.lower()) if t]
+    ranked: list[tuple[int, dict[str, Any]]] = []
+    for item in items:
+        hay = " ".join(str(item.get(k, "")) for k in
+                       ("title", "category", "problem", "technique")).lower()
+        hay += " " + " ".join(item.get("use_when", []) or [])
+        score = sum(3 if t in str(item.get("title", "")).lower() else 1
+                    for t in terms if t in hay)
+        if score:
+            ranked.append((score, item))
+    ranked.sort(key=lambda x: (-x[0], x[1].get("id", "")))
+    return [i for _, i in ranked[:limit]]
+
+
 def ingest_payload(records: list[dict[str, Any]], kind: str) -> dict[str, Any]:
-    namespace = "external-writing-methods" if kind == "external" else "business-language-candidates"
+    external = kind == "external"
     return {
-        "namespace": namespace,
+        "namespace": "external-writing-methods" if external else "business-language-candidates",
         "status": "candidate",
-        "promotion_to_business_pack": "forbidden" if kind == "external" else "owner_confirmation_required",
-        "items": extract_candidates(records),
+        "promotion_to_business_pack": "forbidden" if external else "owner_confirmation_required",
+        # 外部资料学的是写法，不是业务词 —— 走技巧定位器，产出待补全骨架
+        "items": extract_technique_candidates(records) if external else extract_candidates(records),
     }
 
 
@@ -371,6 +454,13 @@ def command_knowledge_query(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_technique_query(args: argparse.Namespace) -> int:
+    items = query_techniques(args.query, load_techniques(Path(args.technique_dir)), args.limit)
+    print(json.dumps({"query": args.query, "matched": len(items), "items": items},
+                     ensure_ascii=False, indent=2))
+    return 0
+
+
 def command_sanitize(args: argparse.Namespace) -> int:
     text = Path(args.file).read_text(encoding="utf-8")
     sanitized, mapping = sanitize_text(text, args.entity or [], args.number_scale)
@@ -433,6 +523,12 @@ def parser() -> argparse.ArgumentParser:
     knowledge.add_argument("--knowledge-dir", default=str(KNOWLEDGE_DIR))
     knowledge.add_argument("--limit", type=int, default=5)
     knowledge.set_defaults(func=command_knowledge_query)
+
+    technique = sub.add_parser("technique-query")
+    technique.add_argument("query")
+    technique.add_argument("--technique-dir", default=str(TECHNIQUE_DIR))
+    technique.add_argument("--limit", type=int, default=5)
+    technique.set_defaults(func=command_technique_query)
 
     sanitize = sub.add_parser("sanitize")
     sanitize.add_argument("file")

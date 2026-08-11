@@ -129,11 +129,25 @@
 - 每条参考记录来源、适用场景、学到的方法和边界；
 - **热门概念不得自动进入业务词包。**
 
-> ⚠️ **当前实现状态**：外部通道只做到了命名空间隔离与"禁止转正"标记
-> （`ingest --kind external`）。抽取逻辑与内部采集共用同一套业务名词正则，
-> 抽的是「XX名单 / XX方法 / XX能力」这类短语，**抽不出"这段为什么写得好"**。
-> 要真正做到 FR-9，需要先定义「一条写作技巧」的结构化字段（适用场景 / 手法 /
-> 反例 / 边界），再谈抽取。这是设计问题，不是工程问题。
+**实现**（`techniques/*.yaml` + `extract_technique_candidates`）：
+
+字段：`id / title / category / problem / technique / example_before /
+example_after / use_when / avoid_when / source / status / promotion`。
+
+三条硬约束：
+
+1. **必须有 `example_before` / `example_after` 对照。** 没有对照的技巧是抽象口号——
+   这是这条 FR 最早失败的地方。
+2. **必须有 `avoid_when`。** 任何手法用错场合都会变成毛病；只说"该用"不说"别用"等于教人滥用。
+3. **`source.kind: external` 的条目永远 `status: candidate`**，且一律 `promotion: forbidden`，
+   不论被引用多少次。
+
+⚠️ **工具只定位候选，不生成技巧。** `extract_technique_candidates` 认四类对照结构
+（`contrast` / `before_after` / `number_reading` / `myth_break`），输出带 `excerpt` 的骨架，
+`title / problem / technique / avoid_when` 四项留 TODO。
+理由：这四项是**判断**，正则产不出判断。早期版本让外部资料走业务名词正则，
+抽出来全是「XX方法」「XX能力」——看着像结果，实际没有可复用信息。
+补全交给人或模型，工具负责把「值得看一眼的段落」从长文里挑出来。
 
 ### FR-10 兼容现有检查器
 
@@ -169,6 +183,7 @@
 8. 多模型结果使用匿名候选标识，并保留各自评价依据。
 9. 外部参考不能被业务词路由器加载为内部标准词。
 10. Python 单测与真实材料对照测试全部通过。
+11. 外部来源的技巧条目在任何路径下都不会变成 `approved`，也进不了业务词包。
 
 ## 7. 明确不做
 
