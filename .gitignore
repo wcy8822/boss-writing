@@ -5,3 +5,6 @@ references/sources.local.yaml
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# pre-push hook 的错误日志
+logs/
