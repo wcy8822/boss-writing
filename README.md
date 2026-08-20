@@ -163,6 +163,7 @@ tools/
   style-lint.py                 句长 / 并列过载 / 术语命中 / 归责表达
   rewrite-check.py              改写稿验收：数字增删 / 禁词 / 篇幅 / SMART 覆盖
   business_language.py          学习内核（八个子命令）
+  dup-scan.py                   跨章冗余扫描（同一件事说了三遍）
   check_local_privacy.py        pre-commit 隐私闸门
   smart-polish-prompt.md        交给模型润色时的 prompt 模板
 language-packs/
@@ -192,6 +193,9 @@ python3 tools/style-lint.py draft.md
 
 # 改写稿验收（基准原文 vs 一到多个候选）
 python3 tools/rewrite-check.py origin.md cand-1.md cand-2.md
+
+# 跨章冗余：同一件事在不同地方重复说（肉眼通读发现不了）
+python3 tools/dup-scan.py draft.md
 
 # 影子检查（分级提示，不阻断）
 python3 tools/business_language.py lint draft.md --report report.json
