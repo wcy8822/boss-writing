@@ -24,6 +24,9 @@ PACK_DIR = SKILL_ROOT / "language-packs"
 RUNTIME_DIR = SKILL_ROOT / ".runtime"
 KNOWLEDGE_DIR = RUNTIME_DIR / "knowledge-base"
 TECHNIQUE_DIR = SKILL_ROOT / "techniques"
+PROFILE_DIR = SKILL_ROOT / "profiles"
+CASE_DIR = SKILL_ROOT / "cases"
+REJECTED_PATH = RUNTIME_DIR / "rejected-terms.yaml"
 
 
 @dataclass
@@ -477,6 +480,195 @@ def extract_case_candidates(origin: str, revised: str) -> list[dict[str, Any]]:
     return out
 
 
+# ── 让它认识你：业务词的候选抽取与入库 ──────────────────────────────
+#
+# 缺这一段之前，往词包加一个词要手写八个字段四个枚举值 —— 没人会做，
+# 于是词包永远停在示例状态，业务感检查永远在报"你这段是空的"却没法变好。
+#
+# 设计要点：工具只负责**抽候选**和**写文件**，判断留给对话。
+# 谁来判断？调用这个 skill 的 AI —— 它先拟好类型与释义，用户只需点头或选一个。
+
+# 停用词：高频但不承载业务信息，抽出来是噪音
+# 虚词后缀/前缀：「客户洞察报告的」比「客户洞察报告」长，n-gram 会让前者挤掉后者。
+# 不剥掉它，最该抽的那个词永远进不了候选。
+TRAILING_PARTICLES = "的了在和与等是有过着就都也很更最把被给对从向为"
+
+
+def normalize_fragment(frag: str) -> str:
+    """剥掉首尾虚词，让「客户洞察报告的」归一到「客户洞察报告」。"""
+    while frag and frag[-1] in TRAILING_PARTICLES:
+        frag = frag[:-1]
+    while frag and frag[0] in TRAILING_PARTICLES:
+        frag = frag[1:]
+    return frag
+
+
+STOP_FRAGMENTS = (
+    "我们", "他们", "可以", "需要", "应该", "已经", "目前", "现在", "以前", "进行",
+    "通过", "对于", "关于", "这个", "那个", "一个", "什么", "如果", "但是", "所以",
+    "因为", "并且", "以及", "或者", "还是", "这些", "那些", "自己", "其中", "同时",
+    "本季度", "上季度", "本周", "上周", "本月", "上月", "今天", "明天",
+)
+TERM_MIN_LEN = 2
+TERM_MAX_LEN = 8
+TERM_MIN_TIMES = 2
+
+
+def _known_terms(packs: Iterable[dict[str, Any]]) -> set[str]:
+    known: set[str] = set()
+    for pack in packs:
+        for term in pack.get("terms", []):
+            known.add(term["text"])
+            known.update(term.get("variants", []) or [])
+        for phrase in pack.get("phrases", []):
+            known.add(phrase["text"])
+    return known
+
+
+def load_rejected(path: Path) -> set[str]:
+    """用户说过「不用收」的词 —— 不记住就会反复问同一个词。"""
+    if not path.exists():
+        return set()
+    return set(load_yaml(path).get("rejected", []) or [])
+
+
+def suggest_terms(
+    text: str,
+    packs: list[dict[str, Any]],
+    rejected: set[str] | None = None,
+    limit: int = 12,
+) -> list[dict[str, Any]]:
+    """从材料里抽出词包尚未收录的说法，作为候选。
+
+    ⚠️ 设计取舍（2026-08-20 连试四版后定的）：
+        **主要靠作者自己标出来的信号，统计只作补充。**
+
+        试过纯 n-gram 统计：中文没有词边界，按长度排会抽出「客户洞察报告的」，
+        按次数排会抽出「户洞察报告」——短串的出现次数天然 ≥ 长串，
+        这个矛盾在纯统计层面解不掉，碎片会把候选池占满。
+
+        而**加粗、引号、书名号里的内容是精确的**——作者特意标出来了，不用猜。
+        代价是：没标记的说法抽不到。这个代价可以接受，因为它换来了可预期的行为，
+        而且会引导出一个好习惯：重要的业务说法在材料里标出来。
+    """
+    known = _known_terms(packs)
+    rejected = rejected or set()
+    body = re.sub(r"```.*?```|<[^>]+>", "", text, flags=re.S)
+
+    def ok(frag: str) -> bool:
+        frag = normalize_fragment(frag)
+        return (
+            TERM_MIN_LEN <= len(frag) <= TERM_MAX_LEN
+            and re.fullmatch(r"[一-鿿A-Za-z0-9]+", frag) is not None
+            and re.search(r"[一-鿿]", frag) is not None
+            and frag not in known
+            and frag not in rejected
+            and not any(stop in frag for stop in STOP_FRAGMENTS)
+        )
+
+    marked: dict[str, str] = {}          # 说法 -> 它是被什么标出来的
+    patterns = [
+        (r"\*\*([^*\n]{2,20})\*\*", "加粗"),
+        (r"[「『]([^」』\n]{2,20})[」』]", "引号"),
+        (r"[《〈]([^》〉\n]{2,20})[》〉]", "书名号"),
+        (r"`([^`\n]{2,20})`", "行内代码"),
+    ]
+    for pattern, label in patterns:
+        for raw in re.findall(pattern, body):
+            frag = normalize_fragment(re.sub(r"[^一-鿿A-Za-z0-9]", "", raw))
+            if ok(frag):
+                marked.setdefault(frag, label)
+
+    # 标题：去掉常见的尾巴（本周进展 / 说明 / 汇报…）后作为候选
+    for raw in re.findall(r"^#{1,6}\s*(.+?)\s*$", body, re.M):
+        frag = re.sub(r"(本周|本月|本季度)?(进展|说明|汇报|总结|情况|概述)$", "",
+                      re.sub(r"^[0-9一二三四五六七八九十、.\s]+", "", raw))
+        frag = normalize_fragment(re.sub(r"[^一-鿿A-Za-z0-9]", "", frag))
+        if ok(frag):
+            marked.setdefault(frag, "标题")
+
+    out = [{
+        "text": frag,
+        "signal": label,
+        "count": body.count(frag),
+        "confidence": "high",
+    } for frag, label in marked.items()]
+    out.sort(key=lambda x: (-x["count"], -len(x["text"])))
+
+    # 统计补充：只在标记信号不足时补，且只取最长的几个，明确标为「猜的」
+    if len(out) < limit:
+        counts: dict[str, int] = {}
+        for size in range(TERM_MAX_LEN, TERM_MIN_LEN - 1, -1):
+            for i in range(len(body) - size):
+                frag = normalize_fragment(body[i:i + size])
+                if ok(frag):
+                    counts[frag] = counts.get(frag, 0) + 1
+        taken = set(marked)
+        for frag, count in sorted(counts.items(), key=lambda x: (-len(x[0]), -x[1])):
+            if len(out) >= limit or count < TERM_MIN_TIMES + 1:
+                break
+            if frag in taken or any(frag in t for t in taken):
+                continue
+            taken.add(frag)
+            out.append({"text": frag, "signal": "重复出现", "count": count, "confidence": "low"})
+    return out[:limit]
+
+
+TERM_TYPES = ("product", "deliverable", "action", "scenario", "business_stage")
+
+
+def append_term(
+    pack_path: Path,
+    text: str,
+    type_: str,
+    meaning: str,
+    source_ref: str,
+    status: str = "approved",
+    variants: list[str] | None = None,
+) -> dict[str, Any]:
+    """往词包追加一个词。不存在则新建词包骨架。"""
+    if type_ not in TERM_TYPES:
+        raise ValueError(f"type 必须是 {TERM_TYPES} 之一，收到 {type_}")
+    if pack_path.exists():
+        pack = load_yaml(pack_path)
+    else:
+        pack = {"id": pack_path.stem, "name": pack_path.stem, "triggers": [], "terms": []}
+    pack.setdefault("terms", [])
+    pack.setdefault("triggers", [])
+    if any(t.get("text") == text for t in pack["terms"]):
+        raise ValueError(f"「{text}」已在 {pack_path.name} 里")
+    entry = {
+        # 中文过 ascii 正则会全变成连字符（曾生成过 demo-domain-- 这种 id），改用序号
+        "id": f"{pack['id']}-{len(pack['terms']) + 1:03d}",
+        "text": text,
+        "type": type_,
+        "status": status,
+        "audiences": ["management", "region", "internal"],
+        "positions": ["title", "claim", "summary", "body"],
+        "meaning": meaning,
+        "sources": [{"kind": "owner", "ref": source_ref}],
+    }
+    if variants:
+        entry["variants"] = variants
+    pack["terms"].append(entry)
+    # 产品名同时成为路由触发词 —— 否则这个包对含该产品名的材料不会被加载
+    if type_ == "product" and text not in pack["triggers"]:
+        pack["triggers"].append(text)
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text(yaml.safe_dump(pack, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    return entry
+
+
+def reject_terms(path: Path, words: Iterable[str]) -> list[str]:
+    """记住用户说过「不用收」的词。"""
+    existing = load_rejected(path)
+    merged = sorted(existing | set(words))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump({"rejected": merged}, allow_unicode=True, sort_keys=False),
+                    encoding="utf-8")
+    return merged
+
+
 def sanitize_text(text: str, entities: list[str], number_scale: float | None = None) -> tuple[str, dict[str, str]]:
     mapping: dict[str, str] = {}
     labels = ["实体甲", "实体乙", "实体丙", "实体丁", "实体戊", "实体己"]
@@ -582,6 +774,86 @@ def command_knowledge_query(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_suggest_terms(args: argparse.Namespace) -> int:
+    text = Path(args.file).read_text(encoding="utf-8")
+    packs = load_packs(Path(args.pack_dir))
+    cands = suggest_terms(text, packs, load_rejected(Path(args.rejected)), args.limit)
+    print(json.dumps({
+        "candidates": cands,
+        "known_terms": len(_known_terms(packs)),
+        "how_to_use": (
+            "confidence=high 的是作者在材料里自己标出来的（加粗/引号/书名号/标题），可信；"
+            "confidence=low 的是按重复出现猜的，中文没有词边界，可能是跨词碎片，挑之前先看一眼。"
+            "挑出 3 个以内，拟成选择题问用户 —— 你先判断类型"
+            "（product/deliverable/action/scenario/business_stage）、先拟好一句释义，"
+            "用户只需点头或选个数字，别让用户填空。"
+            "确认后调 add-term 入库；用户说不收的调 reject-terms 记住，别再问第二遍。"
+            "⭐ 候选之外你也要自己读一遍材料：工具只抽得到被标记的说法，"
+            "而**业务场景（拜访前 / 月底对账时 / 换个区域重跑时）几乎不会被加粗**，"
+            "却是生动感最大的来源（SKILL §三·五）。看到了就主动问，别只依赖候选池。"
+        ),
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
+def command_add_term(args: argparse.Namespace) -> int:
+    pack = Path(args.pack_dir) / f"{args.pack}.yaml"
+    try:
+        entry = append_term(pack, args.text, args.type, args.meaning,
+                            args.source, args.status, args.variant)
+    except ValueError as error:
+        print(f"未入库：{error}", file=sys.stderr)
+        return 1
+    print(json.dumps({"added": entry, "pack": str(pack)}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def command_reject_terms(args: argparse.Namespace) -> int:
+    merged = reject_terms(Path(args.rejected), args.text)
+    print(f"已记住 {len(args.text)} 个不收的说法，累计 {len(merged)} 个；下次不会再问。")
+    return 0
+
+
+def command_profile(args: argparse.Namespace) -> int:
+    """我现在认识你多少 —— 积累看不见，就没人愿意继续喂。"""
+    packs = load_packs(Path(args.pack_dir))
+    by_type: dict[str, int] = {}
+    own_terms = 0
+    for pack in packs:
+        if pack.get("id") in ("common", "example-domain"):
+            continue                                    # 示例与通用包不算"认识你"
+        for term in pack.get("terms", []):
+            by_type[term.get("type", "?")] = by_type.get(term.get("type", "?"), 0) + 1
+            own_terms += 1
+    profiles = [f for f in Path(args.profile_dir).glob("*.yaml") if f.stem != "example"]
+    prefs = sum(len(load_yaml(f).get("stable_preferences", [])) for f in profiles)
+    cases = [f for f in Path(args.case_dir).glob("*.yaml") if f.stem != "example"]
+    case_n = sum(len(load_yaml(f).get("cases", [])) for f in cases)
+    techs = [f for f in Path(args.technique_dir).glob("*.yaml") if f.stem != "example"]
+    tech_n = sum(len(load_yaml(f).get("techniques", [])) for f in techs)
+
+    gaps = []
+    if own_terms == 0:
+        gaps.append("还没有你自己的业务词包 —— 下次改材料时让我抽候选问你")
+    if not by_type.get("scenario"):
+        gaps.append("一个业务场景都还没有 —— 场景是生动感最大的来源（SKILL §三·五）")
+    if not by_type.get("product"):
+        gaps.append("还没登记产品正式名 —— 不登记模型会擅自给你的产品改名")
+    if prefs == 0:
+        gaps.append("还没有你的作者档案 —— 改稿被否两次以上的偏好该升级成稳定规则")
+    if case_n == 0:
+        gaps.append("还没有真实改写案例 —— 规则治下限，案例治上限")
+
+    print(json.dumps({
+        "认识你的业务词": {"总数": own_terms, "按类型": by_type},
+        "你的写作偏好": prefs,
+        "真实改写案例": case_n,
+        "写作技巧": tech_n,
+        "下一步该补什么": gaps or ["都有了，继续用就会继续长"],
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
 def command_technique_query(args: argparse.Namespace) -> int:
     items = query_techniques(args.query, load_techniques(Path(args.technique_dir)), args.limit)
     print(json.dumps({"query": args.query, "matched": len(items), "items": items},
@@ -670,6 +942,34 @@ def parser() -> argparse.ArgumentParser:
     knowledge.add_argument("--knowledge-dir", default=str(KNOWLEDGE_DIR))
     knowledge.add_argument("--limit", type=int, default=5)
     knowledge.set_defaults(func=command_knowledge_query)
+
+    suggest = sub.add_parser("suggest-terms")
+    suggest.add_argument("file")
+    suggest.add_argument("--rejected", default=str(REJECTED_PATH))
+    suggest.add_argument("--limit", type=int, default=12)
+    suggest.set_defaults(func=command_suggest_terms)
+
+    add = sub.add_parser("add-term")
+    add.add_argument("--pack", required=True, help="词包名，如 my-domain")
+    add.add_argument("--text", required=True)
+    add.add_argument("--type", required=True, choices=list(TERM_TYPES))
+    add.add_argument("--meaning", required=True)
+    add.add_argument("--source", default="对话中确认")
+    add.add_argument("--status", default="approved",
+                     choices=["candidate", "supported", "pending_confirmation", "approved"])
+    add.add_argument("--variant", action="append")
+    add.set_defaults(func=command_add_term)
+
+    reject = sub.add_parser("reject-terms")
+    reject.add_argument("text", nargs="+")
+    reject.add_argument("--rejected", default=str(REJECTED_PATH))
+    reject.set_defaults(func=command_reject_terms)
+
+    prof = sub.add_parser("profile")
+    prof.add_argument("--profile-dir", default=str(PROFILE_DIR))
+    prof.add_argument("--case-dir", default=str(CASE_DIR))
+    prof.add_argument("--technique-dir", default=str(TECHNIQUE_DIR))
+    prof.set_defaults(func=command_profile)
 
     technique = sub.add_parser("technique-query")
     technique.add_argument("query")

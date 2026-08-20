@@ -241,6 +241,70 @@ class CaseExtractionTest(unittest.TestCase):
         self.assertTrue(items, "低相似度的整句重写必须保留")
 
 
+class TermLearningTest(unittest.TestCase):
+    """让它认识你：业务词的候选抽取与入库闭环。"""
+
+    MATERIAL = ("## 履约健康度看板本周进展\n\n"
+                "本周完成**履约健康度看板**的第一版。看板的核心是把「超时履约率」讲清楚。\n"
+                "另外把《大区履约白皮书》里的判据同步进来。\n")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.packs = MODULE.load_packs(SKILL_ROOT / "language-packs")
+
+    def test_marked_expressions_are_captured(self):
+        """加粗 / 引号 / 书名号是作者自己标出来的，精确可信。"""
+        got = {c["text"]: c["signal"] for c in MODULE.suggest_terms(self.MATERIAL, self.packs)}
+        self.assertEqual(got.get("履约健康度看板"), "加粗")
+        self.assertEqual(got.get("超时履约率"), "引号")
+        self.assertEqual(got.get("大区履约白皮书"), "书名号")
+
+    def test_already_known_terms_are_not_suggested(self):
+        """已收录的不该再问用户第二遍。"""
+        text = "本周把客户洞察报告发给了三个区域，反馈都不错，下一步继续推进这件事。"
+        self.assertNotIn("客户洞察报告",
+                         [c["text"] for c in MODULE.suggest_terms(text, self.packs)])
+
+    def test_rejected_terms_are_remembered(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "rejected.yaml"
+            MODULE.reject_terms(path, ["大区履约白皮书"])
+            self.assertIn("大区履约白皮书", MODULE.load_rejected(path))
+            got = [c["text"] for c in
+                   MODULE.suggest_terms(self.MATERIAL, self.packs, MODULE.load_rejected(path))]
+            self.assertNotIn("大区履约白皮书", got)
+
+    def test_append_term_writes_valid_pack(self):
+        with tempfile.TemporaryDirectory() as d:
+            pack = Path(d) / "mine.yaml"
+            entry = MODULE.append_term(pack, "履约健康度看板", "product", "汇总履约达成的看板", "对话确认")
+            self.assertTrue(entry["id"].startswith("mine-"))
+            self.assertNotIn("--", entry["id"])          # 曾生成过 xxx-- 这种 id
+            data = MODULE.load_yaml(pack)
+            # 产品名必须同时成为路由触发词，否则这个包对含该产品名的材料不会被加载
+            self.assertIn("履约健康度看板", data["triggers"])
+            self.assertEqual(data["terms"][0]["type"], "product")
+
+    def test_append_term_rejects_duplicate_and_bad_type(self):
+        with tempfile.TemporaryDirectory() as d:
+            pack = Path(d) / "mine.yaml"
+            MODULE.append_term(pack, "晨会前", "scenario", "晨会开始前的时刻", "对话确认")
+            with self.assertRaises(ValueError):
+                MODULE.append_term(pack, "晨会前", "scenario", "重复", "对话确认")
+            with self.assertRaises(ValueError):
+                MODULE.append_term(pack, "别的词", "not-a-type", "释义", "对话确认")
+
+    def test_new_term_immediately_lifts_business_sense(self):
+        """入库后业务感检查要立刻认得 —— 这是整个闭环的意义。"""
+        with tempfile.TemporaryDirectory() as d:
+            pack_dir = Path(d)
+            MODULE.append_term(pack_dir / "mine.yaml", "履约健康度看板", "product",
+                               "汇总履约达成的看板", "对话确认")
+            packs = MODULE.load_packs(pack_dir)
+            text = "晨会前先看一眼履约健康度看板，派单时心里更有底，各大区口径也能保持一致。"
+            self.assertEqual(MODULE.business_sense_findings(text, packs), [])
+
+
 class TechniqueTest(unittest.TestCase):
     """FR-9：外部资料学写法，不学业务词。"""
 
