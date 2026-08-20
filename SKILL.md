@@ -558,12 +558,14 @@ python3 tools/check_local_privacy.py || exit 1
 | `visual/template-warm.html` | 暖色版模板（季度规划默认） |
 | `visual/template-fresh.html` | 清新版模板（项目型汇报） |
 
-**首次使用先做五件事**：
-① 复制 `language-packs/example-domain.yaml` 改成你自己的业务词包，**特别是把名字里带禁词的产品名登记进去**；
-② 复制 `profiles/example.yaml` 改成你自己的作者档案；
-③ 按所在团队的技术栈增补 `style-lint.py` 的术语表；
-④ 按组织用词习惯调整 `rewrite-check.py` 的禁词表与白名单；
-⑤ 把两个 HTML 模板的品牌色换成自己的。
+**装完不需要配置任何东西**：本文的写作规范是纯文档，装好即生效；
+`style-lint.py` / `rewrite-check.py` / `check_local_privacy.py` 三个脚本零第三方依赖，
+直接可跑。学习内核需要 PyYAML，缺了会提示而不是报错。
+
+**用过两三次、有具体不满意之后**，再回来做这三件（不做也能用，做了它才认识你的业务）：
+① 把你的产品正式名登记进 `language-packs/`，尤其是**名字里带通用禁词的**（否则模型会给它改名）；
+② 把团队黑话补进 `style-lint.py` 的 `TERMS`——表里没有的自研系统名、项目代号才是最该加的；
+③ 复制 `profiles/example.yaml`，每次改稿后 `learn` 一条，让它记住你的偏好。
 
 装上 pre-commit 闸门（如果你会往里存聊天语料，这一步必做）：
 

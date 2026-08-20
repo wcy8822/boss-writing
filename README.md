@@ -11,6 +11,26 @@
 
 ---
 
+## 一眼看懂它在干什么
+
+**改前**（句子没错，读完不知道自己少做了什么）：
+
+> 本季度完成行动推荐能力建设，通过整合多源数据构建完整标签体系，为区域和一线团队
+> 提供决策支持，助力选点效率提升，赋能业务增长，形成从数据到决策的闭环。
+
+**改后**：
+
+> **选址推荐已上线：圈过的名单存得下来。**
+>
+> 以前选点靠个人经验，一个区域摸出来的方法，换个区域不一定用得上。现在按标签批量圈选，
+> 在地图上集中判断，一键导出成名单。名单存下来，过三个月还能翻出来对。
+>
+> 区域少做重复整理，把时间放在判断名单和推动行动上。
+
+改的不是词，是**这段话到底在说什么事**。完整对照与另外两类失败见 [examples/](examples/)。
+
+---
+
 ## 解决什么问题
 
 用 AI 写汇报材料，产出通常掉进两个坑：
@@ -85,20 +105,41 @@ git clone <本仓库> ~/.claude/skills/boss-writing
 
 装好后说「写汇报」「改写这段材料」「说人话」「给老板看」即可触发。
 
-依赖：Python 3.9+ 与 PyYAML（只有学习内核需要；两个校验脚本零依赖）。
+依赖：**Python 3.9+，没别的**。三个脚本零第三方依赖；只有学习内核用到 PyYAML，
+不装也不会报错，它会告诉你哪些还能用。要用的时候再装：
 
 ```bash
-pip install pyyaml
-python3 -m pytest tests/ -q      # 27 passed
+pip3 install pyyaml
 ```
 
-## 首次使用先做五件事
+## 装完就能用，不需要配置任何东西
 
-1. **建你自己的业务词包**——复制 `language-packs/example-domain.yaml`。**特别是把名字里带禁词的产品名登记进去**（`type: product` + `approved`），否则模型会擅自给你的产品改名。
-2. **建作者档案**——复制 `profiles/example.yaml`，让它随反馈长大。
-3. **补术语表**——`tools/style-lint.py` 的 `TERMS`，按你团队的技术栈增删。表里没有的内部黑话（自研系统名、平台名、项目代号）才是最该加的。
-4. **调禁词表**——`tools/rewrite-check.py` 的 `BAN_JARGON` 与 `WHITELIST`。
-5. **换品牌色**——两个 HTML 模板 CSS 顶部的 `--orange-*` 一组是占位色。
+**说人话那部分是纯文档，装好即生效**——直接说「帮我改写这段材料」「这段给老板看行吗」就行。
+
+三个脚本零配置可跑，其中两个连 PyYAML 都不需要：
+
+```bash
+python3 tools/style-lint.py <你的材料.md>          # 句长 / 并列过载 / 术语命中 / 归责表达
+python3 tools/rewrite-check.py <原文> <改写稿>     # 数字有没有被改、有没有混进黑话
+python3 tools/business_language.py lint <材料.md>  # 分级提示（这个需要 PyYAML）
+```
+
+没装 PyYAML 也不会报错，它会告诉你哪些还能用。
+
+## 想更准的话，再做这三件
+
+不做也能用，做了它才认识你的业务。**建议用过两三次、有具体不满意的地方之后再来配**——
+先用，再调，比一上来填表有效。
+
+1. **把你的产品正式名登记进词包**——复制 `language-packs/example-domain.yaml` 改成你的域。
+   最要紧的是名字里**带通用禁词的产品名**（`type: product` + `approved`），
+   否则模型会把「XX赋能工具」擅自改成「XX工具」。
+2. **补上你团队的黑话**——`tools/style-lint.py` 的 `TERMS`。
+   表里没有的自研系统名、平台名、项目代号，才是最该加进去的。
+3. **让它记住你的偏好**——复制 `profiles/example.yaml`，每次改稿后用 `learn` 记一条，
+   它会随反馈长大。
+
+用 HTML 汇报模板的话，还要把 `visual/template-*.html` 顶部的 `--orange-*` 换成你的品牌色。
 
 如果你打算往里存聊天语料，**装上 pre-commit 闸门**：
 
@@ -114,6 +155,7 @@ echo 'python3 tools/check_local_privacy.py || exit 1' >> .git/hooks/pre-commit &
 
 ```
 SKILL.md                        写什么、怎么写（主文档）
+examples/                       改前 / 改后对照，三类最高频的失败
 tools/
   style-lint.py                 句长 / 并列过载 / 术语命中 / 归责表达
   rewrite-check.py              改写稿验收：数字增删 / 禁词 / 篇幅 / SMART 覆盖

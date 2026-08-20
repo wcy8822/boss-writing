@@ -12,7 +12,10 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Iterable
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:  # 缺依赖时给一句人话，不是 traceback
+    yaml = None
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
@@ -547,6 +550,16 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if yaml is None:
+        print(
+            "这个子命令需要 PyYAML（词包与知识卡是 YAML 格式）。安装：\n"
+            "    pip3 install pyyaml\n\n"
+            "不装也能用的部分：SKILL.md 的全部写作规范，以及两个零依赖脚本——\n"
+            "    python3 tools/style-lint.py <材料.md>\n"
+            "    python3 tools/rewrite-check.py <原文> <候选>",
+            file=sys.stderr,
+        )
+        return 2
     args = parser().parse_args(argv)
     return args.func(args)
 
