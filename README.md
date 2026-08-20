@@ -119,7 +119,7 @@ python3 tools/business_language.py profile
 
 ## 当前进展与边界
 
-在季度规划、区域汇报、周报三类材料上跑过多轮，材料评分从 60 提到 85。27 个单测覆盖路由、检查、脱敏、反馈、技巧抽取与隐私闸门。
+在季度规划、区域汇报、周报三类材料上跑过多轮，材料评分从 60 提到 85。56 个单测覆盖路由、检查、业务感、词汇学习、脱敏、反馈、技巧抽取与隐私闸门。
 
 **明确说清楚三条边界，别误解它的能力：**
 
@@ -162,20 +162,26 @@ python3 tools/business_language.py lint <材料.md>  # 分级提示（这个需�
 
 没装 PyYAML 也不会报错，它会告诉你哪些还能用。
 
-## 想更准的话，再做这三件
+## 让它认识你：你什么都不用手动配
 
-不做也能用，做了它才认识你的业务。**建议用过两三次、有具体不满意的地方之后再来配**——
-先用，再调，比一上来填表有效。
+**不需要编辑任何 YAML。** 每次改材料时，AI 会顺手抽出你还没登记的业务说法，
+按理解归好类问你一句，你点头它就入库了（详见 SKILL §九·〇）。
 
-1. **把你的产品正式名登记进词包**——复制 `language-packs/example-domain.yaml` 改成你的域。
-   最要紧的是名字里**带通用禁词的产品名**（`type: product` + `approved`），
-   否则模型会把「XX赋能工具」擅自改成「XX工具」。
-2. **补上你团队的黑话**——`tools/style-lint.py` 的 `TERMS`。
+你唯一需要做的是**在材料里标出重要说法**——加粗、加「引号」或《书名号》。
+被标记的说法会被精确捕获，没标记的只能靠 AI 读出来。这个习惯本身也让材料更好读。
+
+想手动加也可以，一条命令，不用写 YAML：
+
+```bash
+python3 tools/business_language.py add-term --pack my-domain \
+  --text "履约健康度看板" --type product --meaning "汇总各大区履约达成情况的看板"
+```
+
+两件事仍然值得手动做一次：
+
+1. **补上你团队的黑话**——`tools/style-lint.py` 的 `TERMS`。
    表里没有的自研系统名、平台名、项目代号，才是最该加进去的。
-3. **让它记住你的偏好**——复制 `profiles/example.yaml`，每次改稿后用 `learn` 记一条，
-   它会随反馈长大。
-
-用 HTML 汇报模板的话，还要把 `visual/template-*.html` 顶部的 `--orange-*` 换成你的品牌色。
+2. **换品牌色**——用 HTML 汇报模板的话，把 `visual/template-*.html` 顶部的 `--orange-*` 换掉。
 
 如果你打算往里存聊天语料，**装上 pre-commit 闸门**：
 
@@ -195,7 +201,7 @@ examples/                       改前 / 改后对照，三类最高频的失败
 tools/
   style-lint.py                 句长 / 并列过载 / 术语命中 / 归责表达
   rewrite-check.py              改写稿验收：数字增删 / 禁词 / 篇幅 / SMART 覆盖
-  business_language.py          学习内核（八个子命令）
+  business_language.py          学习内核（13 个子命令）
   dup-scan.py                   跨章冗余扫描（同一件事说了三遍）
   check_local_privacy.py        pre-commit 隐私闸门
   smart-polish-prompt.md        交给模型润色时的 prompt 模板
@@ -208,7 +214,7 @@ techniques/example.yaml         写作技巧库（外部资料学来的写法）
 references/
   DESIGN.md                     学习内核的需求、边界与验收标准
   sources.example.yaml          采集来源配置模板
-tests/                          27 个单测
+tests/                          56 个单测
 .github/workflows/tests.yml     CI：3.9 / 3.11 / 3.12 三个独立 job
 SECURITY.md                     安全边界与静态扫描告警逐条说明
 visual/
