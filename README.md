@@ -63,7 +63,7 @@
 采集 → 识别业务表达 → 保留来源 → 辅助写作 → 分级检查 → 收集反馈 → 更新词包、案例与作者偏好
 ```
 
-八个命令：`route`（自动选词包）、`lint`（影子检查）、`knowledge-query`（检索已确认知识）、`learn`（记录反馈事件）、`ingest`（语料抽候选）、`sanitize`（一致性脱敏）、`blind-packet`（多模型匿名评测）、`technique-query`（检索写作技巧）。
+九个命令：`route`（自动选词包）、`lint`（影子检查，含**业务感密度**）、`extract-cases`（**从改稿自动抽 case**）、`knowledge-query`（检索已确认知识）、`learn`（记录反馈事件）、`ingest`（语料抽候选）、`sanitize`（一致性脱敏）、`blind-packet`（多模型匿名评测）、`technique-query`（检索写作技巧）。
 
 四份随用随长的资产：通用语言包、业务词包、作者偏好档案、正反案例库。
 
@@ -196,7 +196,10 @@ python3 tools/rewrite-check.py origin.md cand-1.md cand-2.md
 # 影子检查（分级提示，不阻断）
 python3 tools/business_language.py lint draft.md --report report.json
 
-# 记录一次反馈 —— 这一步不做，学习闭环就是断的
+# 润色后沉淀 —— 这一步不做，下次还是从零开始
+python3 tools/business_language.py extract-cases draft.md final.md --output cases-new.yaml
+
+# 记录一次反馈
 python3 tools/business_language.py learn \
   --before "共同承诺" --after "一起把这件事做成" \
   --reason "对合作团队有压力" --audience region --material-type speech

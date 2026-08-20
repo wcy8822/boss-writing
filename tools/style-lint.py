@@ -54,13 +54,18 @@ def main(path: str, mode: str = "all") -> int:
         if "</details>" in line:
             in_details = False
             continue
+        # Markdown 表格行：单元格里的枚举不是句子并列，跳过句长/并列检查。
+        # 起因：`| 业务对象 | 名单、地图、点位、客户、策略编号 |` 被判「4 个顿号并列过载」，
+        # 但表格本来就该枚举。SKILL §七·六·二 早写了「表格行常因格式一致被误报」，
+        # 这里把那条规则落进代码。术语与听感检查仍然生效——表格里也会藏黑话。
+        is_table_row = line.startswith("|") and line.count("|") >= 2
         # 去 markdown/HTML 噪音后再检
         text = re.sub(r"<[^>]+>", "", line)          # HTML 标签
         text = re.sub(r"`[^`]*`", "", text)           # 行内代码
         text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)  # 链接
         text = re.sub(r"[#>*_|\-]{1,}", " ", text)   # md 记号/表格线
         # ① / ② 长句与并列: 按句末标点切句
-        if mode in ("all", "--len-only"):
+        if mode in ("all", "--len-only") and not is_table_row:
             for sent in re.split(r"[。！？；;]", text):
                 n = cjk_len(sent)
                 if n > MAX_LEN:

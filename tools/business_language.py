@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import re
@@ -206,7 +207,59 @@ def lint_text(text: str, packs: list[dict[str, Any]]) -> tuple[list[Finding], li
                         [], [],
                     ))
 
+    # ⚠️ 这里传全部 packs 而不是 routed —— 鸡生蛋：越没有业务感的材料越路由不到
+    #    业务词包，用 routed 会导致最该被报的段落反而不被检查。
+    findings.extend(business_sense_findings(text, packs))
     return findings, routed
+
+
+# 业务感 = 业务对象 + 业务动作 + 业务场景的密度（SKILL §三·五）。
+#
+# ⚠️ 这是本文件里唯一一个「正向」检查：其余检查都在报「你写错了」，
+# 这个报的是「你这段是空的」。它只能提示缺失，说不出该填什么 ——
+# 该填什么取决于业务，只有作者知道。
+BUSINESS_SENSE_TYPES = ("product", "deliverable", "action", "scenario", "business_stage")
+MIN_PARA_CHARS = 40  # 太短的段落（标题、过渡句）不判
+
+
+def business_words(packs: Iterable[dict[str, Any]]) -> dict[str, str]:
+    """收集词包里所有承载业务感的表达 -> 它的类型。"""
+    out: dict[str, str] = {}
+    for pack in packs:
+        for term in pack.get("terms", []):
+            if term.get("status") != "approved" or term.get("type") not in BUSINESS_SENSE_TYPES:
+                continue
+            out[term["text"]] = term["type"]
+            for variant in term.get("variants", []) or []:
+                out[variant] = term["type"]
+        for phrase in pack.get("phrases", []):
+            if phrase.get("status") == "approved":
+                out[phrase["text"]] = phrase.get("type", "phrase")
+    return out
+
+
+def business_sense_findings(text: str, packs: list[dict[str, Any]]) -> list[Finding]:
+    """整段没有任何业务对象/动作/场景 —— 读者脑子里是空的。"""
+    vocab = business_words(packs)
+    if not vocab:
+        return []
+    findings: list[Finding] = []
+    line_no = 1
+    for para in re.split(r"\n\s*\n", text):
+        span = para.count("\n") + 1
+        body = re.sub(r"^[#>|\-\s*]+|`[^`]*`|<[^>]+>", "", para).strip()
+        cn = len(re.findall(r"[一-鿿]", body))
+        if cn >= MIN_PARA_CHARS and not para.lstrip().startswith(("|", "```")):
+            if not any(w in para for w in vocab):
+                findings.append(Finding(
+                    line_no, "body", "medium", "business_sense",
+                    body[:24] + "…",
+                    f"整段 {cn} 字里没有业务对象 动作或场景 读者脑子里是空的",
+                    [f"词包里可用的有 {' / '.join(list(vocab)[:6])} 等 {len(vocab)} 个"],
+                    [],
+                ))
+        line_no += span + 1
+    return findings
 
 
 def write_report(path: Path, findings: list[Finding], routed: list[dict[str, Any]]) -> None:
@@ -352,6 +405,78 @@ def ingest_payload(records: list[dict[str, Any]], kind: str) -> dict[str, Any]:
     }
 
 
+# ── 把「润色」变成能积累的一步 ─────────────────────────────────────────
+#
+# SKILL §七·七 定的分工是：起草归人、精进归模型。但润色这一步长期没有沉淀——
+# 每次都从零判断模型改得对不对，改对的那句下次不会自动出现。
+#
+# 这里做的事：从「原稿 vs 改写稿」自动找出被改写的句子对，产出 case 候选。
+# ⚠️ **不自动填 reason**。为什么这么改是判断，diff 产不出判断——
+#    跟 FR-9 技巧抽取同一个原则：工具只定位，判断留给人。
+# ⚠️ 粒度是「段」不是「句」，且**不用相似度配对**。
+#    2026-08-20 实测教训：一段黑话改成一段有业务感的话，最佳句级配对相似度只有
+#    0.06~0.28 —— 真正好的改写就是整句重写，字面几乎不重合。
+#    用相似度筛会把最有价值的改写全过滤掉，只留下"改了个标点"那类垃圾。
+#    相似度在这里只有一个用途：滤掉几乎没动的。
+CASE_NEAR_IDENTICAL = 0.95   # 高于此说明只动了标点，不值得记
+CASE_MIN_CHARS = 8
+CASE_PARA_HINT_CHARS = 120   # 超过此长度提示人工拆条
+
+CASE_TODO = "TODO 由人补"
+
+
+def split_sentences(text: str) -> list[str]:
+    text = re.sub(r"```.*?```", "", text, flags=re.S)
+    text = re.sub(r"^\s*>\s?", "", text, flags=re.M)     # 先脱引用符号，否则下一条匹配不到
+    # 标题行末尾补句号 —— 否则下面合并软换行时会把标题和正文粘成一句。
+    text = re.sub(r"^(#{1,6}\s*\S.*?)\s*$", r"\1。", text, flags=re.M)
+    text = re.sub(r"^[#|\-\s*]+", "", text, flags=re.M)
+    # Markdown 里空行才是段落分隔，单个换行是软换行 —— 先把软换行接回去，
+    # 否则「为区域和一线团队 / 提供决策支持」会被切成两句。
+    text = re.sub(r"(?<![。！？\n])\n(?!\s*\n)", "", text)
+    out = []
+    for raw in re.split(r"[。！？\n]", text):
+        sent = re.sub(r"\s+", "", re.sub(r"[*`_]", "", raw)).strip()
+        if len(re.findall(r"[一-鿿]", sent)) >= CASE_MIN_CHARS:
+            out.append(sent)
+    return out
+
+
+def extract_case_candidates(origin: str, revised: str) -> list[dict[str, Any]]:
+    """从「原稿 vs 改写稿」找出改写对，产出待补全的 case 候选。
+
+    对应关系取自 difflib 的 replace 区间（按序列位置），不靠字面相似度。
+    """
+    a, b = split_sentences(origin), split_sentences(revised)
+    out: list[dict[str, Any]] = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
+        if tag != "replace":          # 纯新增 / 纯删除不是改写
+            continue
+        before = "。".join(a[i1:i2])
+        after = "。".join(b[j1:j2])
+        if not before or not after:
+            continue
+        ratio = difflib.SequenceMatcher(None, before, after).ratio()
+        if ratio >= CASE_NEAR_IDENTICAL:
+            continue                  # 只动了标点，不值得记
+        single = (i2 - i1 == 1) and (j2 - j1 == 1)
+        item = {
+            "id": f"auto-{len(out) + 1:03d}",
+            "granularity": "sentence" if single else "paragraph",
+            "before": before,
+            "after": after,
+            # 以下三项是判断，diff 产不出，留空
+            "reason": CASE_TODO,
+            "audience": CASE_TODO,
+            "material_type": CASE_TODO,
+            "result": "pending_confirmation",
+        }
+        if not single and len(re.findall(r"[一-鿿]", before)) > CASE_PARA_HINT_CHARS:
+            item["hint"] = "整段重写 建议人工拆成几条各自说清改了什么"
+        out.append(item)
+    return out
+
+
 def sanitize_text(text: str, entities: list[str], number_scale: float | None = None) -> tuple[str, dict[str, str]]:
     mapping: dict[str, str] = {}
     labels = ["实体甲", "实体乙", "实体丙", "实体丁", "实体戊", "实体己"]
@@ -464,6 +589,25 @@ def command_technique_query(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_extract_cases(args: argparse.Namespace) -> int:
+    origin = Path(args.origin).read_text(encoding="utf-8")
+    revised = Path(args.revised).read_text(encoding="utf-8")
+    items = extract_case_candidates(origin, revised)
+    payload = {"id": "auto-extracted", "status": "candidate", "cases": items}
+    if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.output).write_text(
+            yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        print(f"抽出 {len(items)} 条 case 候选 → {args.output}")
+    else:
+        print(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False))
+    if items:
+        print(f"\n⚠️ reason / audience / material_type 三项留空待你补 —— "
+              f"「为什么这么改」是判断，diff 产不出。\n"
+              f"   补完把 cases 段并进 cases/*.yaml，下次写作时它就会被读到。", file=sys.stderr)
+    return 0
+
+
 def command_sanitize(args: argparse.Namespace) -> int:
     text = Path(args.file).read_text(encoding="utf-8")
     sanitized, mapping = sanitize_text(text, args.entity or [], args.number_scale)
@@ -532,6 +676,12 @@ def parser() -> argparse.ArgumentParser:
     technique.add_argument("--technique-dir", default=str(TECHNIQUE_DIR))
     technique.add_argument("--limit", type=int, default=5)
     technique.set_defaults(func=command_technique_query)
+
+    cases = sub.add_parser("extract-cases")
+    cases.add_argument("origin", help="润色前的原稿")
+    cases.add_argument("revised", help="润色后的稿子")
+    cases.add_argument("--output", help="写入 YAML；不给则打到标准输出")
+    cases.set_defaults(func=command_extract_cases)
 
     sanitize = sub.add_parser("sanitize")
     sanitize.add_argument("file")

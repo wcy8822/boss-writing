@@ -145,6 +145,102 @@ class BusinessLanguageTest(unittest.TestCase):
         self.assertIn("增长复制引擎", texts)
 
 
+class BusinessSenseTest(unittest.TestCase):
+    """业务感 = 业务对象 + 动作 + 场景的密度（SKILL §三·五）。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.packs = MODULE.load_packs(SKILL_ROOT / "language-packs")
+
+    def test_empty_paragraph_is_reported(self):
+        text = ("本季度我们持续推进能力建设，通过体系化的方法完善整体框架，形成了较为完整的机制，"
+                "为后续工作奠定了坚实基础，各项指标均有所改善，整体运行情况良好。")
+        hits = [f for f in MODULE.business_sense_findings(text, self.packs)
+                if f.category == "business_sense"]
+        self.assertEqual(len(hits), 1)
+        self.assertIn("读者脑子里是空的", hits[0].reason)
+
+    def test_paragraph_with_business_words_is_not_reported(self):
+        text = ("拜访客户前，一线以前要翻三个系统才能查清周边有几家竞对。现在按标签批量圈选，"
+                "在地图上集中判断，名单保存后还能继续跟踪和回溯。两区试点跑通后仍可复用。")
+        self.assertEqual(MODULE.business_sense_findings(text, self.packs), [])
+
+    def test_short_paragraph_is_not_judged(self):
+        """标题、过渡句太短，判不出来也不该判。"""
+        self.assertEqual(MODULE.business_sense_findings("本季度进展良好。", self.packs), [])
+
+    def test_scenario_alone_is_enough(self):
+        """三要素任一即可 —— 场景是最被低估的那个。"""
+        text = "月底对账时，" + "这件事需要反复确认才能推进下去因此耗时较长" * 2
+        self.assertEqual(MODULE.business_sense_findings(text, self.packs), [])
+
+    def test_uses_all_packs_not_only_routed(self):
+        """⚠️ 回归锁：必须对照全部词包。
+
+        用 routed 会产生鸡生蛋——越没有业务感的材料越路由不到业务词包，
+        结果最该被报的段落反而不被检查。这个坑踩过一次。
+        """
+        empty = ("本季度我们持续推进能力建设，通过体系化的方法完善整体框架，形成了较为完整的机制，"
+                 "为后续工作奠定了坚实基础，各项指标均有所改善，整体运行情况良好。")
+        routed = MODULE.route_packs(empty, self.packs)
+        self.assertEqual([p["id"] for p in routed], ["common"])   # 确实只路由到 common
+        self.assertEqual(MODULE.business_words(routed), {})       # common 里没有业务感词
+        findings, _ = MODULE.lint_text(empty, self.packs)         # 但整体 lint 必须报出来
+        self.assertTrue(any(f.category == "business_sense" for f in findings))
+
+
+class CaseExtractionTest(unittest.TestCase):
+    """把润色变成能积累的一步：从原稿 vs 改写稿抽 case 候选。"""
+
+    ORIGIN = "本季度完成能力建设，通过整合多源数据构建完整体系，为团队\n提供决策支持，赋能业务增长。"
+    REVISED = "以前选点靠个人经验，换个区域用不上。现在按标签批量圈选，一键导出成名单。"
+
+    def test_extracts_rewrite_pair(self):
+        items = MODULE.extract_case_candidates(self.ORIGIN, self.REVISED)
+        self.assertTrue(items)
+        self.assertIn("能力建设", items[0]["before"])
+        self.assertIn("圈选", items[0]["after"])
+
+    def test_judgement_fields_left_empty(self):
+        """为什么这么改是判断，diff 产不出 —— 三项必须留空。"""
+        item = MODULE.extract_case_candidates(self.ORIGIN, self.REVISED)[0]
+        for field in ("reason", "audience", "material_type"):
+            self.assertEqual(item[field], MODULE.CASE_TODO)
+        self.assertEqual(item["result"], "pending_confirmation")
+
+    def test_near_identical_is_skipped(self):
+        """只动标点不值得记。"""
+        a = "以前选点靠个人经验，换个区域就用不上了。"
+        b = "以前选点靠个人经验，换个区域就用不上了"
+        self.assertEqual(MODULE.extract_case_candidates(a, b), [])
+
+    def test_soft_wrap_does_not_split_sentence(self):
+        """⚠️ 回归锁：markdown 软换行不是句子边界。踩过一次。"""
+        sents = MODULE.split_sentences("为区域和一线团队\n提供决策支持，赋能业务增长。")
+        self.assertEqual(len(sents), 1)
+        self.assertIn("为区域和一线团队提供决策支持", sents[0])
+
+    def test_heading_does_not_glue_to_body(self):
+        """⚠️ 回归锁：修软换行时引入过一个副作用——标题末尾没句号，
+        合并软换行会把标题和正文粘成一句。"""
+        sents = MODULE.split_sentences("## 三、行动推荐能力建设方案\n本季度完成了整合工作，效果良好。")
+        self.assertGreaterEqual(len(sents), 2, f"标题与正文没分开: {sents}")
+        self.assertNotIn("本季度", sents[0])
+
+    def test_heading_inside_blockquote_also_splits(self):
+        """引用块里的标题同样要分开 —— examples/ 里的改前改后就在引用块中。"""
+        sents = MODULE.split_sentences("> ## 三、行动推荐能力建设方案\n>\n> 本季度完成了整合工作。")
+        self.assertNotIn("本季度", sents[0])
+
+    def test_low_similarity_pairs_are_kept(self):
+        """⚠️ 回归锁：整句重写字面几乎不重合（实测 0.06~0.28），
+        早期版本用相似度下限筛，把最有价值的改写全过滤掉了。"""
+        items = MODULE.extract_case_candidates(
+            "形成了从数据到决策的闭环，赋能业务持续增长。",
+            "拜访客户前打开就能看到周边有几家竞对，不用再翻三个系统。")
+        self.assertTrue(items, "低相似度的整句重写必须保留")
+
+
 class TechniqueTest(unittest.TestCase):
     """FR-9：外部资料学写法，不学业务词。"""
 

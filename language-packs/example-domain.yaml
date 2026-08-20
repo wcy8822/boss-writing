@@ -84,6 +84,32 @@ terms:
     meaning: 在两个区域验证名单 流程和方法
     variants: [两区试]
     sources: [{kind: owner, ref: 示例 —— 计划确认}]
+  # ⭐ scenario = 一个具体的时刻或情境。生动感最大的来源不是形容词，是把读者放进某个时刻。
+  #    这一类最容易被忽略，但它是「业务感」三要素里最值钱的一个（见 SKILL §三·五）。
+  - id: ex-before-visit
+    text: 拜访客户前
+    type: scenario
+    status: approved
+    audiences: [region, internal]
+    positions: [claim, summary, body]
+    meaning: 一线出门见客户之前的准备时刻
+    sources: [{kind: owner, ref: 示例 —— 场景确认}]
+  - id: ex-month-end
+    text: 月底对账时
+    type: scenario
+    status: approved
+    audiences: [management, region, internal]
+    positions: [claim, summary, body]
+    meaning: 结算与复盘发生的时刻
+    sources: [{kind: owner, ref: 示例 —— 场景确认}]
+  - id: ex-new-region
+    text: 换个区域重跑时
+    type: scenario
+    status: approved
+    audiences: [management, internal]
+    positions: [claim, summary, body]
+    meaning: 方法被复用到新地区的时刻
+    sources: [{kind: owner, ref: 示例 —— 场景确认}]
 phrases:
   - text: 按标签批量圈选
     type: action
